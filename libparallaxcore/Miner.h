@@ -267,10 +267,10 @@ struct TelemetryType
         of magnitude than the hashrate expressed by single devices.
         Thus I need to set the vary same scaling index on the farm and on devices
         */
-        static string suffixes[] = {"h", "Kh", "Mh", "Gh"};
+        static string suffixes[] = {"h", "Kh", "Mh", "Gh", "Th"};
         float hr = farm.hashrate;
         int magnitude = 0;
-        while (hr > 1000.0f && magnitude <= 3)
+        while (hr > 1000.0f && magnitude < 4)
         {
             hr /= 1000.0f;
             magnitude++;
