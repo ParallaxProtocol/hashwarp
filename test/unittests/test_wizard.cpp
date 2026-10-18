@@ -44,10 +44,33 @@ struct WizardTest : public ::testing::Test
 };
 }  // namespace
 
-TEST_F(WizardTest, pool)
+TEST_F(WizardTest, known_pool)
+{
+    std::istringstream in(
+        "\n"                                            // pool (default)
+        "x\n"                                           // not a choice: asked again
+        "\n"                                            // first listed pool (default)
+        "0x1234567890abcdef1234567890abcdef12345678\n"
+        "\n"                                            // default worker name
+        "\n"                                            // save
+        "n\n");                                         // don't start now
+    std::ostringstream out;
+    EXPECT_FALSE(runWizard(path, in, out));
+
+    Options o = load();
+    ASSERT_EQ(o.pools.size(), 1u);
+    EXPECT_EQ(o.pools[0], "stratum-eu.rplant.xyz:17159");
+    EXPECT_TRUE(o.tls);
+    EXPECT_FALSE(o.worker.empty());
+    ASSERT_EQ(buildPoolUris(o).size(), 1u);
+    EXPECT_EQ(buildPoolUris(o)[0].compare(0, 13, "stratum+ssl:/"), 0);
+}
+
+TEST_F(WizardTest, other_pool)
 {
     std::istringstream in(
         "1\n"
+        "9\n"                                           // another pool
         "pool.example.com\n"                            // no port: asked again
         "pool.example.com:4443\n"
         "y\n"                                           // TLS
@@ -83,7 +106,7 @@ TEST_F(WizardTest, solo_and_start)
 
 TEST_F(WizardTest, end_of_input_gives_up)
 {
-    std::istringstream in("1\npool.example.com:3333\n");
+    std::istringstream in("1\n9\npool.example.com:3333\n");
     std::ostringstream out;
     EXPECT_FALSE(runWizard(path, in, out));
     EXPECT_FALSE(fs::exists(path));

@@ -48,7 +48,7 @@ Run `hashwarp` without arguments: it asks whether you mine on a pool or solo, sa
 Or give the options on the command line:
 
 ```sh
-# On a pool (find Parallax pools at https://docs.parallaxprotocol.org)
+# On a pool (Parallax pools: see docs/MINING.md or https://miningpoolstats.stream/parallax)
 hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker rig1
 
 # TLS, and a failover pool

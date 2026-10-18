@@ -24,7 +24,27 @@ namespace hashwarp
 {
 namespace
 {
-const char* const c_poolsGuide = "https://docs.parallaxprotocol.org/v2.1.x/guides/mining/pool";
+const char* const c_poolsGuide = "https://miningpoolstats.stream/parallax";
+
+// Pools that take a Parallax address as the user name, by hashrate. Checked on 2026-10-18
+// (stratum answered, TLS certificates valid); pools come and go, "another pool" covers the rest
+struct KnownPool
+{
+    const char* name;
+    const char* host;
+    bool tls;
+};
+const KnownPool c_knownPools[] = {
+    {"rplant.xyz, Europe, PPLNS 1%", "stratum-eu.rplant.xyz:17159", true},
+    {"rplant.xyz, North America, PPLNS 1%", "stratum-na.rplant.xyz:17159", true},
+    {"rplant.xyz, Asia, PPLNS 1%", "stratum-asia.rplant.xyz:17159", true},
+    {"rplant.xyz, Russia, PPLNS 1%", "stratum-ru.rplant.xyz:17159", true},
+    {"coolpool.top, PPLNS 1%", "prlx.coolpool.top:3003", false},
+    {"coolpool.top, SOLO 1.5%", "prlx.coolpool.top:3002", false},
+    {"cedric-crispin.com, Thailand, PPLNS 0.1%", "parallax.cedric-crispin.com:4554", false},
+    {"pool.ion.cool, Spain, PPLNS 1%", "pool.ion.cool:33350", false},
+};
+const unsigned c_knownPoolCount = sizeof(c_knownPools) / sizeof(c_knownPools[0]);
 
 struct EndOfInput
 {
@@ -110,21 +130,48 @@ bool runWizard(const std::string& _path, std::istream& _in, std::ostream& _out)
 
         if (mode == "1")
         {
-            _out << "\nParallax pools are listed at " << c_poolsGuide << "\n";
-            std::string pool;
-            while (true)
+            _out << "\nWhich pool?\n";
+            for (unsigned i = 0; i < c_knownPoolCount; i++)
+                _out << "  " << i + 1 << ") " << c_knownPools[i].name << "\n";
+            _out << "  " << c_knownPoolCount + 1 << ") Another pool (Parallax pools are listed at "
+                 << c_poolsGuide << ")\n";
+            unsigned choice = 0;
+            while (choice < 1 || choice > c_knownPoolCount + 1)
             {
-                pool = ask(_in, _out, "Pool address as host:port");
-                if (pool.find("://") != std::string::npos ||
-                    (pool.find(':') != std::string::npos && pool.back() != ':'))
-                    break;
-                _out << "Please include the port, e.g. pool.example.com:3333\n";
+                try
+                {
+                    choice = (unsigned)std::stoul(ask(_in, _out, "Choice", "1"));
+                }
+                catch (const std::logic_error&)
+                {
+                    choice = 0;
+                }
             }
+
             config["pool"] = Json::Value(Json::arrayValue);
-            config["pool"].append(pool);
-            if (pool.find("://") == std::string::npos &&
-                askYesNo(_in, _out, "Does the pool use TLS (SSL) on this port?", false))
-                config["tls"] = true;
+            if (choice <= c_knownPoolCount)
+            {
+                const KnownPool& known = c_knownPools[choice - 1];
+                config["pool"].append(known.host);
+                if (known.tls)
+                    config["tls"] = true;
+            }
+            else
+            {
+                std::string pool;
+                while (true)
+                {
+                    pool = ask(_in, _out, "Pool address as host:port");
+                    if (pool.find("://") != std::string::npos ||
+                        (pool.find(':') != std::string::npos && pool.back() != ':'))
+                        break;
+                    _out << "Please include the port, e.g. pool.example.com:3333\n";
+                }
+                config["pool"].append(pool);
+                if (pool.find("://") == std::string::npos &&
+                    askYesNo(_in, _out, "Does the pool use TLS (SSL) on this port?", false))
+                    config["tls"] = true;
+            }
 
             std::string wallet;
             while (!isAddress(wallet))

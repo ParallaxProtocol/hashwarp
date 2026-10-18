@@ -11,8 +11,21 @@
 
 ## Pools
 
-Parallax pools are listed in the [Parallax documentation](https://docs.parallaxprotocol.org).
-Give the pool's host and port, your Parallax address and a name for the rig:
+Parallax pools are listed on [miningpoolstats](https://miningpoolstats.stream/parallax). These
+take your Parallax address as the user name (checked in October 2026):
+
+| Pool | Scheme, fee | Address | TLS address |
+| ---- | ----------- | ------- | ----------- |
+| [rplant.xyz](https://pool.rplant.xyz) | PPLNS 1% | `stratum-<region>.rplant.xyz:7159` | `stratum-<region>.rplant.xyz:17159` |
+| [coolpool.top](https://coolpool.top/pool/prlx) | PPLNS 1% | `prlx.coolpool.top:3003` | |
+| [coolpool.top](https://coolpool.top/pool/prlxsolo) | SOLO 1.5% | `prlx.coolpool.top:3002` | |
+| [cedric-crispin.com](https://parallax.cedric-crispin.com) | PPLNS 0.1% | `parallax.cedric-crispin.com:4554` | |
+| [pool.ion.cool](https://pool.ion.cool/parallax) | PPLNS 1% | `pool.ion.cool:33350` | |
+
+rplant regions are `eu`, `na`, `asia` and `ru`; coolpool also has `eu.`, `us.` and `asia.`
+hosts. [gtpool.io](https://gtpool.io) takes its own account ID instead of an address. The first
+run wizard offers these pools. Give the pool's host and port, your Parallax address and a name
+for the rig:
 
 ```sh
 hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker rig1
