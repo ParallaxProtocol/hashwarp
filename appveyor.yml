@@ -64,7 +64,10 @@ for:
         -DCMAKE_BUILD_TYPE=Release \
         -DHUNTER_JOBS_NUMBER=$(nproc) \
         -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.9/bin/nvcc \
-        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12
+        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12 \
+        -DHASHWARP_TESTS=ON
+      cmake --build build --config Release -j"$(nproc)"
+      ctest --test-dir build --output-on-failure
       cmake --build build --config Release --target package -j"$(nproc)"
 
   # --------- WINDOWS JOB ----------

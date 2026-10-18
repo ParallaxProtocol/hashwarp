@@ -35,6 +35,7 @@ option(ETHDBUS "Build with D-Bus support" OFF)
 option(APICORE "Build with API Server support" ON)
 option(DEVBUILD "Log developer metrics" OFF)
 option(USE_SYS_OPENCL "Build with system OpenCL" OFF)
+option(HASHWARP_TESTS "Build unit tests" OFF)
 
 # propagates CMake configuration options to the compiler
 function(configureProject)
@@ -70,8 +71,10 @@ find_package(jsoncpp CONFIG REQUIRED)
 hunter_add_package(xhash)
 find_package(xhash CONFIG REQUIRED)
 
-hunter_add_package(xhash)
-find_package(xhash CONFIG REQUIRED)
+if (HASHWARP_TESTS)
+  hunter_add_package(GTest)
+  find_package(GTest CONFIG REQUIRED)
+endif()
 
 configureProject()
 
@@ -90,6 +93,7 @@ message("-- ETHDBUS          Build D-Bus components                       ${ETHD
 message("-- APICORE          Build API Server components                  ${APICORE}")
 message("-- DEVBUILD         Build with dev logging                       ${DEVBUILD}")
 message("-- USE_SYS_OPENCL   Build with system OpenCL                     ${USE_SYS_OPENCL}")
+message("-- HASHWARP_TESTS   Build unit tests                             ${HASHWARP_TESTS}")
 message("----------------------------------------------------------------------------")
 message("")
 
@@ -119,6 +123,11 @@ if (APICORE)
 endif()
 
 add_subdirectory(hashwarp)
+
+if (HASHWARP_TESTS)
+  enable_testing()
+  add_subdirectory(test)
+endif()
 
 
 # CPack configuration: produce platform-specific release archives named

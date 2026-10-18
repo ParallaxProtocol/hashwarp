@@ -9,6 +9,7 @@
   * [macOS](#macos)
   * [Windows](#windows)
 * [CMake configuration options](#cmake-configuration-options)
+* [Tests](#tests)
 * [Disable Hunter](#disable-hunter)
 * [Instructions](#instructions)
   * [Windows-specific script](#windows-specific-script)
@@ -160,9 +161,29 @@ cmake .. -DXHASHCUDA=ON -DXHASHCL=OFF
 * `-DAPICORE=ON` - enable API Server, `ON` by default.
 * `-DETHDBUS=ON` - enable D-Bus support, `OFF` by default.
 * `-DUSE_SYS_OPENCL=ON` - Use system OpenCL, `OFF` by default, unless on macOS. Specify to use local **ROCm-OpenCL** package.
+* `-DHASHWARP_TESTS=ON` - build the unit tests, `OFF` by default.
 * `-DXHASH_CUDA_ARCHS="..."` - CUDA architectures to build (also read from the `XHASH_CUDA_ARCHS`
   environment variable), e.g. `"86-real;89-real;120-real;120-virtual"`. By default every
   architecture supported by the CUDA toolkit from Pascal (Turing with CUDA 13) to Blackwell is built.
+
+## Tests
+
+Unit tests (no GPU needed):
+
+```shell
+cmake -S . -B build -DHASHWARP_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+GPU self-test: mines against a local mock node (`getwork`) or pool (`stratum`, EthereumStratum/1.0.0)
+and checks every GPU result on the CPU, the epoch and, for stratum, that the share rate matches the
+pool difficulty:
+
+```shell
+python3 test/gpu/selftest.py build/hashwarp/hashwarp cuda
+python3 test/gpu/selftest.py build/hashwarp/hashwarp opencl --protocol stratum
+```
 
 ## Disable Hunter
 
