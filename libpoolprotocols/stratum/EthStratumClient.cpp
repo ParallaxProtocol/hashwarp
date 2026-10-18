@@ -524,12 +524,19 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
         m_securesocket->lowest_layer().set_option(boost::asio::socket_base::keep_alive(true));
         m_securesocket->lowest_layer().set_option(tcp::no_delay(true));
 
+        // Send the host name (SNI): pools behind TLS proxies or CDNs need it
+        // to pick the right certificate
+        if (m_conn->HostNameType() == dev::UriHostNameType::Dns ||
+            m_conn->HostNameType() == dev::UriHostNameType::Basic)
+            SSL_set_tlsext_host_name(m_securesocket->native_handle(), m_conn->Host().c_str());
+
         m_securesocket->handshake(boost::asio::ssl::stream_base::client, hec);
 
         if (hec)
         {
             cwarn << "SSL/TLS Handshake failed: " << hec.message();
-            if (hec.value() == 337047686)
+            if (hec.category() == boost::asio::error::get_ssl_category() &&
+                ERR_GET_REASON(hec.value()) == SSL_R_CERTIFICATE_VERIFY_FAILED)
             {  // certificate verification failed
                 cwarn << "This can have multiple reasons:";
                 cwarn << "* Root certs are either not installed or not found";
@@ -712,6 +719,16 @@ std::string EthStratumClient::processError(Json::Value& responseObject)
 
 void EthStratumClient::processExtranonce(std::string& enonce)
 {
+    // The extranonce is the leading part of the 64 bit nonce (16 hex chars):
+    // it must leave some room for the miner
+    if (enonce.length() >= 16 ||
+        enonce.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+    {
+        cwarn << "Pool sent an invalid extranonce " << enonce << ". Disconnecting ...";
+        m_conn->MarkUnrecoverable();
+        m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
+        return;
+    }
     m_session->extraNonceSizeBytes = enonce.length();
     cnote << "Extranonce set to " EthWhite << enonce << EthReset;
     enonce.resize(16, '0');
@@ -1701,6 +1718,16 @@ void EthStratumClient::onRecvSocketDataCompleted(
             boost::asio::buffer_cast<const char*>(m_recvBuffer.data()), bytes_transferred);
         m_recvBuffer.consume(bytes_transferred);
         m_message.append(rx_message);
+
+        // A well behaved pool never sends lines this long: don't let a
+        // misbehaving one grow the buffer without bound
+        if (m_message.size() > 65536 && m_message.find("\n") == string::npos)
+        {
+            cwarn << "Pool " << m_conn->Host() << " sent an oversized message. Disconnecting ...";
+            m_message.clear();
+            m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
+            return;
+        }
 
         // Process each line in the transmission
         // NOTE : as multiple jobs may come in with
