@@ -154,7 +154,9 @@ struct HwSensorsType
 struct TelemetryAccountType
 {
     string prefix = "";
-    float hashrate = 0.0f;
+    float hashrate = 0.0f;       // Last collection interval
+    float hashrate60 = 0.0f;     // Average of the last minute
+    float hashrate900 = 0.0f;    // Average of the last 15 minutes
     bool paused = false;
     HwSensorsType sensors;
     SolutionAccountType solutions;
@@ -241,6 +243,7 @@ struct TelemetryType
 
     TelemetryAccountType farm;
     std::vector<TelemetryAccountType> miners;
+    double effectiveHashrate = 0.0;  // From accepted shares over the last 15 minutes
     std::string str()
     {
         std::stringstream _ret;
@@ -344,7 +347,10 @@ public:
      * @return true iff the solution was good (implying that mining should be .
      */
     virtual void submitProof(Solution const& _p) = 0;
-    virtual void accountSolution(unsigned _minerIdx, SolutionAccountingEnum _accounting) = 0;
+    /// @param _hashes Expected hashes of the share's target (accepted shares, for the
+    ///                effective hashrate)
+    virtual void accountSolution(
+        unsigned _minerIdx, SolutionAccountingEnum _accounting, double _hashes = 0) = 0;
     virtual uint64_t get_nonce_scrambler() = 0;
     virtual unsigned get_segment_width() = 0;
 

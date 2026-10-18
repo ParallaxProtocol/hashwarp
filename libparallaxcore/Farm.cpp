@@ -274,6 +274,21 @@ unsigned Farm::nonceSegmentWidth(unsigned _exSizeHexChars, size_t _miners, unsig
     return width;
 }
 
+void Farm::pruneSamples(std::deque<Sample>& _samples, std::chrono::steady_clock::time_point _now)
+{
+    while (!_samples.empty() && _now - _samples.front().time > std::chrono::seconds(900))
+        _samples.pop_front();
+}
+
+float Farm::averageSince(const std::deque<Sample>& _samples, std::chrono::steady_clock::time_point _since)
+{
+    double sum = 0;
+    unsigned count = 0;
+    for (auto it = _samples.rbegin(); it != _samples.rend() && it->time >= _since; ++it, ++count)
+        sum += it->value;
+    return count ? float(sum / count) : 0.0f;
+}
+
 /**
  * @brief Start a number of miners.
  */
@@ -433,10 +448,12 @@ bool Farm::reboot(const std::vector<std::string>& args)
 /**
  * @brief Account solutions for miner and for farm
  */
-void Farm::accountSolution(unsigned _minerIdx, SolutionAccountingEnum _accounting)
+void Farm::accountSolution(unsigned _minerIdx, SolutionAccountingEnum _accounting, double _hashes)
 {
     if (_accounting == SolutionAccountingEnum::Accepted)
     {
+        if (_hashes > 0)
+            m_acceptedHashes.push_back({std::chrono::steady_clock::now(), _hashes});
         m_telemetry.farm.solutions.accepted++;
         m_telemetry.farm.solutions.tstamp = std::chrono::steady_clock::now();
         m_telemetry.miners.at(_minerIdx).solutions.accepted++;
@@ -553,12 +570,29 @@ void Farm::collectData(const boost::system::error_code& ec)
 
     // Reset hashrate (it will accumulate from miners)
     float farm_hr = 0.0f;
+    auto now = std::chrono::steady_clock::now();
+    if (m_minerHashrates.size() < m_miners.size())
+        m_minerHashrates.resize(m_miners.size());
 
     // Process miners
     for (auto const& miner : m_miners)
     {
         int minerIdx = miner->Index();
+
+        // Zeroes the hashrate of a miner which didn't answer the previous
+        // trigger (stopped or idle) before reading it
+        miner->TriggerHashRateUpdate();
         float hr = (miner->paused() ? 0.0f : miner->RetrieveHashRate());
+
+        // Averages start with the first hashes (not while the DAG is built)
+        auto& history = m_minerHashrates.at(minerIdx);
+        if (hr > 0 || !history.empty())
+            history.push_back({now, hr});
+        pruneSamples(history, now);
+        m_telemetry.miners.at(minerIdx).hashrate60 =
+            averageSince(history, now - std::chrono::seconds(60));
+        m_telemetry.miners.at(minerIdx).hashrate900 =
+            averageSince(history, now - std::chrono::seconds(900));
         farm_hr += hr;
         m_telemetry.miners.at(minerIdx).hashrate = hr;
         m_telemetry.miners.at(minerIdx).paused = miner->paused();
@@ -683,8 +717,23 @@ void Farm::collectData(const boost::system::error_code& ec)
             m_telemetry.miners.at(minerIdx).sensors.powerW = powerW / ((double)1000.0);
         }
         m_telemetry.farm.hashrate = farm_hr;
-        miner->TriggerHashRateUpdate();
     }
+
+    if (farm_hr > 0 || !m_farmHashrates.empty())
+        m_farmHashrates.push_back({now, farm_hr});
+    pruneSamples(m_farmHashrates, now);
+    m_telemetry.farm.hashrate60 = averageSince(m_farmHashrates, now - std::chrono::seconds(60));
+    m_telemetry.farm.hashrate900 = averageSince(m_farmHashrates, now - std::chrono::seconds(900));
+
+    // Effective hashrate: what the accepted shares are worth over the last
+    // 15 minutes (or since mining started)
+    pruneSamples(m_acceptedHashes, now);
+    double window = std::min(900.0,
+        std::chrono::duration<double>(now - m_telemetry.start).count());
+    double hashes = 0;
+    for (const auto& s : m_acceptedHashes)
+        hashes += s.value;
+    m_telemetry.effectiveHashrate = window > 0 ? hashes / window : 0;
 
     // Resubmit timer for another loop
     m_collectTimer.expires_from_now(boost::posix_time::milliseconds(m_collectInterval));

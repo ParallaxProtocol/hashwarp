@@ -18,6 +18,7 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
 #include <list>
 #include <thread>
 
@@ -174,7 +175,8 @@ public:
      * @brief Accounts a solution to a miner and, as a consequence, to
      *  the whole farm
      */
-    void accountSolution(unsigned _minerIdx, SolutionAccountingEnum _accounting) override;
+    void accountSolution(
+        unsigned _minerIdx, SolutionAccountingEnum _accounting, double _hashes = 0) override;
 
     /**
      * @brief Gets the solutions account for the whole farm
@@ -273,6 +275,20 @@ private:
     std::atomic<bool> m_isMining = {false};
 
     TelemetryType m_telemetry;  // Holds progress and status info for farm and miners
+
+    // Hashrate samples (one per collection) and accepted share hashes of the
+    // last 15 minutes, for the averages and the effective hashrate
+    struct Sample
+    {
+        std::chrono::steady_clock::time_point time;
+        double value;
+    };
+    static void pruneSamples(std::deque<Sample>& _samples, std::chrono::steady_clock::time_point _now);
+    static float averageSince(const std::deque<Sample>& _samples,
+        std::chrono::steady_clock::time_point _since);
+    std::vector<std::deque<Sample>> m_minerHashrates;
+    std::deque<Sample> m_farmHashrates;
+    std::deque<Sample> m_acceptedHashes;
 
     SolutionFound m_onSolutionFound;
     MinerRestart m_onMinerRestart;

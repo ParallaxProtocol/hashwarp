@@ -7,10 +7,10 @@ set(EXECUTABLE hashwarp)
 hunter_add_package(CLI11)
 find_package(CLI11 CONFIG REQUIRED)
 
-# Command line and configuration options (shared with the unit tests)
-add_library(hashwarp-options STATIC Options.cpp Options.h Wizard.cpp Wizard.h)
-target_include_directories(hashwarp-options PUBLIC ..)
-target_link_libraries(hashwarp-options PUBLIC CLI11::CLI11 PRIVATE poolprotocols devcore
+# Options, first run wizard and console output (shared with the unit tests)
+add_library(hashwarp-cli STATIC Options.cpp Options.h Wizard.cpp Wizard.h Console.cpp Console.h)
+target_include_directories(hashwarp-cli PUBLIC ..)
+target_link_libraries(hashwarp-cli PUBLIC CLI11::CLI11 parallaxcore PRIVATE poolprotocols devcore
   jsoncpp_static Boost::filesystem)
 
 add_executable(${EXECUTABLE} main.cpp DBusInt.h)
@@ -18,7 +18,7 @@ if(MSVC)
   target_sources(${EXECUTABLE} PRIVATE hashwarp.rc)
 endif()
 
-target_link_libraries(hashwarp PRIVATE hashwarp-options parallaxcore poolprotocols devcore hashwarp-buildinfo Boost::system Boost::thread)
+target_link_libraries(hashwarp PRIVATE hashwarp-cli parallaxcore poolprotocols devcore hashwarp-buildinfo Boost::system Boost::thread)
 
 if(ETHDBUS)
   find_package(PkgConfig)

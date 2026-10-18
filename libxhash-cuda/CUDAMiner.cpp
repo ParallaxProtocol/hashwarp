@@ -495,7 +495,7 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
 
                 Farm::f().submitProof(
                     Solution{nonce, mixes[r], w, std::chrono::steady_clock::now(), m_index});
-                cudalog << EthWhite << "Job: " << w.header.abridged() << " Sol: 0x"
+                cdebug << "cuda-" << m_index << " Job: " << w.header.abridged() << " Sol: 0x"
                         << toHex(nonce) << EthReset;
             }
         }

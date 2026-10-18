@@ -41,6 +41,7 @@
 #include <libapicore/ApiServer.h>
 #endif
 
+#include "Console.h"
 #include "Options.h"
 #include "Wizard.h"
 
@@ -134,13 +135,40 @@ public:
         m_io_thread.join();
     }
 
+    static hashwarp::PoolStatus poolStatus()
+    {
+        hashwarp::PoolStatus pool;
+        pool.connected = PoolManager::p().isConnected();
+        auto conn = PoolManager::p().getActiveConnection();
+        if (conn)
+            pool.host = conn->Host() + ":" + to_string(conn->Port());
+        pool.difficulty = PoolManager::p().getCurrentDifficulty();
+        pool.epoch = PoolManager::p().getCurrentEpoch();
+        pool.block = PoolManager::p().getCurrentBlock();
+        return pool;
+    }
+
+    static void printStats()
+    {
+        std::vector<hashwarp::GpuStatus> gpus;
+        for (auto const& miner : Farm::f().getMiners())
+            gpus.push_back({miner->getDescriptor().name, miner->pausedString()});
+        for (const auto& line : hashwarp::statsTable(Farm::f().Telemetry(), gpus, poolStatus()))
+            minelog << line;
+    }
+
     void cliDisplayInterval_elapsed(const boost::system::error_code& ec)
     {
         if (!ec && g_running)
         {
-            string logLine =
-                PoolManager::p().isConnected() ? Farm::f().Telemetry().str() : "Not connected";
-            minelog << logLine;
+            auto now = std::chrono::steady_clock::now();
+            if (m_opts.statsInterval && now - m_lastStats >= std::chrono::seconds(m_opts.statsInterval))
+            {
+                m_lastStats = now;
+                printStats();
+            }
+            else
+                minelog << hashwarp::summaryLine(Farm::f().Telemetry(), poolStatus());
 
 #if ETH_DBUS
             dbusint.send(Farm::f().Telemetry().str().c_str());
@@ -625,6 +653,7 @@ private:
                                                     // multithreaded environment
 
     hashwarp::Options m_opts;  // Options from the command line and configuration file
+    std::chrono::steady_clock::time_point m_lastStats = std::chrono::steady_clock::now();
 
     // Physical Mining Devices descriptor
     std::map<std::string, DeviceDescriptor> m_DevicesCollection = {};

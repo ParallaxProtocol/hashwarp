@@ -477,7 +477,7 @@ void EthGetworkClient::processResponse(Json::Value& JRes)
         else
         {
             if (m_onSolutionRejected)
-                m_onSolutionRejected(_delay, miner_index);
+                m_onSolutionRejected(_delay, miner_index, _errReason);
         }
     }
 

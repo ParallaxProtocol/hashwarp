@@ -70,7 +70,7 @@ void SimulateClient::submitSolution(const Solution& solution)
     else
     {
         if (m_onSolutionRejected)
-            m_onSolutionRejected(response_delay_ms, solution.midx);
+            m_onSolutionRejected(response_delay_ms, solution.midx, "above target");
     }
 }
 

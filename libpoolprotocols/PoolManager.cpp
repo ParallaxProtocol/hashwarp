@@ -207,21 +207,34 @@ void PoolManager::setClientHandlers()
 
     p_client->onSolutionAccepted(
         [&](std::chrono::milliseconds const& _responseDelay, unsigned const& _minerIdx, bool _asStale) {
-            std::stringstream ss;
-            ss << std::setw(4) << std::setfill(' ') << _responseDelay.count() << " ms. "
-               << m_selectedHost;
-            cnote << EthLime "**Accepted" << (_asStale ? " stale": "") << EthReset << ss.str();
-            Farm::f().accountSolution(_minerIdx, SolutionAccountingEnum::Accepted);
+            double hashes = getCurrentDifficulty();
+            Farm::f().accountSolution(_minerIdx, SolutionAccountingEnum::Accepted, hashes);
+            auto solutions = Farm::f().getSolutions();
+            if (p_client->getConnection()->Family() == ProtocolFamily::GETWORK)
+            {
+                // A solution the node accepts seals a block
+                cnote << EthYellowBold "*** BLOCK FOUND by GPU" << _minerIdx
+                      << (m_currentWp.block >= 0 ? " at height " + to_string(m_currentWp.block) :
+                                                   "")
+                      << " ***" EthReset " " << _responseDelay.count() << " ms "
+                      << m_selectedHost;
+                return;
+            }
+            cnote << EthLime "Accepted" << (_asStale ? " (stale)" : "") << EthReset " GPU"
+                  << _minerIdx << " diff " << dev::getFormattedHashes(hashes) << " "
+                  << _responseDelay.count() << " ms " << m_selectedHost << " "
+                  << solutions.str();
         });
 
-    p_client->onSolutionRejected(
-        [&](std::chrono::milliseconds const& _responseDelay, unsigned const& _minerIdx) {
-            std::stringstream ss;
-            ss << std::setw(4) << std::setfill(' ') << _responseDelay.count() << " ms. "
-               << m_selectedHost;
-            cwarn << EthRed "**Rejected" EthReset << ss.str();
-            Farm::f().accountSolution(_minerIdx, SolutionAccountingEnum::Rejected);
-        });
+    p_client->onSolutionRejected([&](std::chrono::milliseconds const& _responseDelay,
+                                     unsigned const& _minerIdx, std::string const& _reason) {
+        Farm::f().accountSolution(_minerIdx, SolutionAccountingEnum::Rejected);
+        auto solutions = Farm::f().getSolutions();
+        cwarn << EthRed "Rejected" EthReset " GPU" << _minerIdx << " diff "
+              << dev::getFormattedHashes(getCurrentDifficulty()) << " "
+              << _responseDelay.count() << " ms " << m_selectedHost << " " << solutions.str()
+              << ": " << (_reason.empty() ? "no reason given" : _reason);
+    });
 }
 
 void PoolManager::stop()
@@ -537,6 +550,11 @@ void PoolManager::reconnecttimer_elapsed(const boost::system::error_code& ec)
 int PoolManager::getCurrentEpoch()
 {
     return m_currentWp.epoch;
+}
+
+int PoolManager::getCurrentBlock()
+{
+    return m_currentWp.block;
 }
 
 double PoolManager::getCurrentDifficulty()

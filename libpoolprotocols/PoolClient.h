@@ -91,7 +91,8 @@ public:
     }
 
     using SolutionAccepted = function<void(chrono::milliseconds const&, unsigned const&, bool)>;
-    using SolutionRejected = function<void(chrono::milliseconds const&, unsigned const&)>;
+    using SolutionRejected =
+        function<void(chrono::milliseconds const&, unsigned const&, std::string const&)>;
     using Disconnected = function<void()>;
     using Connected = function<void()>;
     using WorkReceived = function<void(WorkPackage const&)>;

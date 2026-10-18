@@ -1151,11 +1151,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             else
             {
                 if (m_onSolutionRejected)
-                {
-                    cwarn << "Reject reason : "
-                          << (_errReason.empty() ? "Unspecified" : _errReason);
-                    m_onSolutionRejected(response_delay_ms, miner_index);
-                }
+                    m_onSolutionRejected(response_delay_ms, miner_index, _errReason);
             }
         }
 
@@ -1186,11 +1182,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             {
                 
                 if (m_onSolutionRejected)
-                {
-                    cwarn << "Reject reason : "
-                          << (_errReason.empty() ? "Unspecified" : _errReason);
-                    m_onSolutionRejected(response_delay_ms, miner_index);
-                }
+                    m_onSolutionRejected(response_delay_ms, miner_index, _errReason);
             }
         }
 

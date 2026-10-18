@@ -52,6 +52,7 @@ public:
     bool isConnected() { return p_client->isConnected(); };
     bool isRunning() { return m_running; };
     int getCurrentEpoch();
+    int getCurrentBlock();  // -1 if the pool doesn't tell
     double getCurrentDifficulty();
     unsigned getConnectionSwitches();
     unsigned getEpochChanges();

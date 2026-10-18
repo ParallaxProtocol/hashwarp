@@ -442,7 +442,7 @@ void CLMiner::workLoop()
                         Farm::f().submitProof(Solution{
                             nonce, mix, current, std::chrono::steady_clock::now(), m_index});
 
-                        cllog << EthWhite << "Job: " << current.header.abridged() << " Sol: 0x"
+                        cdebug << "cl-" << m_index << " Job: " << current.header.abridged() << " Sol: 0x"
                               << toHex(nonce) << EthReset;
                     }
                 }
