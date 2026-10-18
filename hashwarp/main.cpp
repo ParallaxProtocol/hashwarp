@@ -20,6 +20,7 @@
 #include <hashwarp/buildinfo.h>
 #include <condition_variable>
 #include <fstream>
+#include <future>
 
 #ifndef ENABLE_VIRTUAL_TERMINAL_PROCESSING
 #define ENABLE_VIRTUAL_TERMINAL_PROCESSING 0x0004
@@ -58,7 +59,8 @@ using namespace dev::eth;
 
 
 // Global vars
-bool g_running = false;
+std::atomic<bool> g_running = {false};
+std::atomic<bool> g_interrupted = {false};  // Set by the signal handler
 bool g_exitOnError = false;  // Whether or not hashwarp should exit on mining threads errors
 std::atomic<int> g_exitCode = {0};
 
@@ -256,8 +258,6 @@ public:
 
     static void signalHandler(int sig)
     {
-        dev::setThreadName("main");
-
         switch (sig)
         {
 #if defined(__linux__) || defined(__APPLE__)
@@ -272,7 +272,6 @@ public:
 
                 in_handler = true;
 
-                dev::setThreadName("main");
                 cerr << "SIGSEGV encountered ...\n";
                 cerr << "stack trace:\n";
 
@@ -300,9 +299,9 @@ public:
             // this makes it happy.
             break;
         default:
-            cnote << "Got interrupt ...";
+            // Only async signal safe work here: the main thread polls the flags
+            g_interrupted = true;
             g_running = false;
-            g_shouldstop.notify_all();
             break;
         }
     }
@@ -628,9 +627,18 @@ private:
         }
 #endif
 
+        // GPUs to mine on, in the order per GPU option lists refer to them
         std::vector<unsigned> selected = m_opts.gpuIds;
+        if (selected.empty())
+        {
+            for (auto id : m_opts.cudaDevices)
+                selected.push_back(id);
+            for (auto id : m_opts.openclDevices)
+                if (std::find(selected.begin(), selected.end(), id) == selected.end())
+                    selected.push_back(id);
+        }
         bool explicitSelection = !selected.empty();
-        if (m_opts.cudaDevices.empty() && m_opts.openclDevices.empty() && selected.empty())
+        if (selected.empty())
             for (unsigned i = 0; i < m_DevicesCollection.size(); i++)
                 selected.push_back(i);
 
@@ -738,23 +746,23 @@ private:
             std::chrono::steady_clock::now() + std::chrono::seconds(m_opts.selftestSeconds);
         while (g_running)
         {
-            if (!m_opts.selftestSeconds)
-            {
-                g_shouldstop.wait(clilock);
-                continue;
-            }
             g_shouldstop.wait_for(clilock, std::chrono::seconds(1));
+            if (!m_opts.selftestSeconds)
+                continue;
             auto now = std::chrono::steady_clock::now();
             if (now >= selftestEnd ||
-                (selftestDone() && now >= selftestEnd - std::chrono::seconds(m_opts.selftestSeconds) +
-                                               std::chrono::seconds(15)))
+                (onIoThread(selftestDone) &&
+                    now >= selftestEnd - std::chrono::seconds(m_opts.selftestSeconds) +
+                               std::chrono::seconds(15)))
                 break;
         }
+        if (g_interrupted)
+            cnote << "Got interrupt ...";
         hotkeys.reset();
         if (m_opts.selftestSeconds)
         {
             g_running = false;
-            g_exitCode = selftestReport() ? 0 : 1;
+            g_exitCode = onIoThread(selftestReport) ? 0 : 1;
         }
 
 #if API_CORE
@@ -769,6 +777,15 @@ private:
 
         cnote << "Terminated!";
         return;
+    }
+
+    // Runs _f on the io_service thread (which owns the telemetry) and returns its result
+    template <class F>
+    static auto onIoThread(F _f) -> decltype(_f())
+    {
+        std::promise<decltype(_f())> result;
+        g_io_service.post([&]() { result.set_value(_f()); });
+        return result.get_future().get();
     }
 
     // Whether every GPU found enough solutions and has a measured hashrate

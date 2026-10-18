@@ -133,6 +133,7 @@ public:
 protected:
     /// Formats and writes the accrued entry to the console and the log file
     void flush();
+    void write();
 
     char const* m_id;
     LogLevel m_level;

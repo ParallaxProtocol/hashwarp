@@ -75,7 +75,7 @@ public:
     /// Message of the exception which ended the work loop last
     std::string lastError() const
     {
-        Guard l(x_work);
+        Guard l(x_lastError);
         return m_lastError;
     }
 
@@ -87,7 +87,9 @@ private:
     mutable Mutex x_work;                 ///< Lock for the network existence.
     std::unique_ptr<std::thread> m_work;  ///< The network thread.
     std::atomic<WorkerState> m_state = {WorkerState::Starting};
-    std::string m_lastError;  ///< Guarded by x_work
+    // Not guarded by x_work: stopWorking() holds it while waiting for the thread
+    mutable Mutex x_lastError;
+    std::string m_lastError;  ///< Guarded by x_lastError
 };
 
 }  // namespace dev

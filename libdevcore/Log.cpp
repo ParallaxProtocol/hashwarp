@@ -201,7 +201,18 @@ void LogOutputStreamBase::flush()
 {
     if (!m_enabled)
         return;
+    try
+    {
+        write();
+    }
+    catch (...)
+    {
+        // Called from destructors: never throw
+    }
+}
 
+void LogOutputStreamBase::write()
+{
     auto now = std::chrono::system_clock::now();
     std::string thread = getThreadName();
     thread.resize(std::max<size_t>(thread.size(), 8), ' ');

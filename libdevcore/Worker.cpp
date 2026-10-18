@@ -32,6 +32,10 @@ void Worker::startWorking()
 {
     DEV_BUILD_LOG_PROGRAMFLOW(cnote, "Worker::startWorking() begin");
     //	cnote << "startWorking for thread" << m_name;
+    {
+        Guard l(x_lastError);
+        m_lastError.clear();
+    }
     Guard l(x_work);
     if (m_work)
     {
@@ -60,7 +64,7 @@ void Worker::startWorking()
                 {
                     clog(WarnChannel) << "Exception thrown in Worker thread: " << _e.what();
                     {
-                        Guard l(x_work);
+                        Guard l(x_lastError);
                         m_lastError = _e.what();
                     }
                     if (g_exitOnError)
