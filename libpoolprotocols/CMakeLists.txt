@@ -7,7 +7,7 @@ set(SOURCES
  getwork/EthGetworkClient.h getwork/EthGetworkClient.cpp
 )
 
-hunter_add_package(OpenSSL)
+# hunter_add_package(OpenSSL) is in the top level CMakeLists.txt
 # Hunter's static OpenSSL, even where the system has its own: the executable
 # must not depend on the OpenSSL version installed
 set(OPENSSL_USE_STATIC_LIBS TRUE)

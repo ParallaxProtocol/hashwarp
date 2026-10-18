@@ -72,6 +72,11 @@ function(configureProject)
   endif()
 endfunction()
 
+# Before any other package: find_library caches directory listings during a
+# configure run, a package unpacked into Hunter's Install/lib after an earlier
+# search there is not seen (OpenSSL was then not found, or the system's was used)
+hunter_add_package(OpenSSL)
+
 hunter_add_package(Boost COMPONENTS system filesystem thread)
 find_package(Boost CONFIG REQUIRED COMPONENTS system filesystem thread)
 
