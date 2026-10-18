@@ -83,7 +83,8 @@ bool Miner::pausedForWork()
     boost::mutex::scoped_lock l(x_pause);
     return m_pauseFlags.test(MinerPauseEnum::PauseDueToOverHeating) ||
            m_pauseFlags.test(MinerPauseEnum::PauseDueToAPIRequest) ||
-           m_pauseFlags.test(MinerPauseEnum::PauseDueToFarmPaused);
+           m_pauseFlags.test(MinerPauseEnum::PauseDueToFarmPaused) ||
+           m_pauseFlags.test(MinerPauseEnum::PauseDueToFailure);
 }
 
 bool Miner::epochInitFailed()
@@ -139,6 +140,8 @@ std::string Miner::pausedString()
                     retVar.append("Insufficient GPU memory");
                 else if (i == MinerPauseEnum::PauseDueToInitEpochError)
                     retVar.append("Epoch initialization error");
+                else if (i == MinerPauseEnum::PauseDueToFailure)
+                    retVar.append("GPU failed");
 
             }
         }

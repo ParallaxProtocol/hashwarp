@@ -153,6 +153,10 @@ Farm::Farm(std::map<std::string, DeviceDescriptor>& _DevicesCollection, FarmSett
     // Initialize nonce_scrambler
     shuffle();
 
+    m_lastCollect = std::chrono::steady_clock::now().time_since_epoch().count();
+    if (m_Settings.watchdogTimeout)
+        m_hangWatchdog = std::thread([this]() { hangWatchdogLoop(); });
+
     // Start data collector timer
     // It should work for the whole lifetime of Farm
     // regardless it's mining state
@@ -169,6 +173,16 @@ Farm::~Farm()
 
     // Stop data collector (before monitors !!!)
     m_collectTimer.cancel();
+
+    if (m_hangWatchdog.joinable())
+    {
+        {
+            std::lock_guard<std::mutex> l(x_hangWatchdog);
+            m_hangWatchdogStopping = true;
+        }
+        m_hangWatchdogStop.notify_all();
+        m_hangWatchdog.join();
+    }
 
     // Deinit HWMON
 #if defined(__linux)
@@ -390,9 +404,17 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
         _miner.pause(MinerPauseEnum::PauseDueToOverHeating);
         return;
     }
+    if (memStop && !memTemp && !m_memTempWarned.count(_minerIdx))
+    {
+        m_memTempWarned.insert(_minerIdx);
+        cwarn << "GPU " << _minerIdx
+              << " reports no memory or hotspot temperature: --mem-temp-stop has no effect";
+    }
+
+    // A failed sensor read (0) never counts as cooled down
     if (paused)
     {
-        bool coreCool = !tempStop || !_sensors.tempC || _sensors.tempC <= (int)tempResume;
+        bool coreCool = !tempStop || (_sensors.tempC && _sensors.tempC <= (int)tempResume);
         bool memCool = !memStop || !memTemp || memTemp <= (int)memResume;
         if (coreCool && memCool)
         {
@@ -404,46 +426,85 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
     }
 }
 
-void Farm::watchdog(Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now)
+void Farm::restartFailedMiner(
+    Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now)
 {
-    if (m_watchdogGaveUp)
+    MinerRestarts& r = m_minerRestarts[_minerIdx];
+    if (r.givenUp || _now < r.next)
         return;
+    while (!r.times.empty() && _now - r.times.front() > std::chrono::hours(1))
+        r.times.pop_front();
 
-    if (_miner.isStopped())
+    std::string reason = _miner.lastError();
+    if (reason.empty())
+        reason = "device initialization failed";
+
+    if (r.times.size() >= m_Settings.watchdogRestarts)
     {
-        // The work loop ended with an error: start it again, unless it keeps failing
-        auto& restarts = m_minerRestarts[_minerIdx];
-        while (!restarts.empty() && _now - restarts.front() > std::chrono::hours(1))
-            restarts.pop_front();
-        std::string reason = _miner.lastError();
-        if (reason.empty())
-            reason = "device initialization failed";
-        if (restarts.size() >= m_Settings.watchdogRestarts)
-        {
-            cerror << "GPU " << _minerIdx << " failed " << restarts.size() + 1
-                   << " times in the last hour: " << reason;
-            watchdogGiveUp(_minerIdx, reason, false);
-            return;
-        }
-        restarts.push_back(_now);
-        cwarn << "GPU " << _minerIdx << " stopped (" << reason << "). Restarting it ("
-              << restarts.size() << "/" << m_Settings.watchdogRestarts << " in the last hour)";
-        _miner.heartbeat();
-        _miner.startWorking();
+        // Leave this GPU stopped, the others keep mining
+        r.givenUp = true;
+        _miner.pause(MinerPauseEnum::PauseDueToFailure);
+        cerror << "GPU " << _minerIdx << " failed " << r.times.size() + 1
+               << " times in the last hour (" << reason << "). Leaving it stopped";
+
+        bool anyMining = false;
+        for (auto const& miner : m_miners)
+            anyMining = anyMining || !m_minerRestarts[miner->Index()].givenUp;
+        if (!anyMining)
+            watchdogGiveUp(_minerIdx, "no GPU left mining", false);
         return;
     }
 
-    if (_miner.unresponsive(std::chrono::seconds(m_Settings.watchdogTimeout)))
+    // Wait 5, 10, 20 ... (up to 300) seconds before the following restart
+    r.times.push_back(_now);
+    r.next = _now + std::chrono::seconds(std::min(300, 5 << std::min<int>(r.times.size(), 6)));
+    cwarn << "GPU " << _minerIdx << " stopped (" << reason << "). Restarting it ("
+          << r.times.size() << "/" << m_Settings.watchdogRestarts << " in the last hour)";
+    _miner.heartbeat();
+    _miner.startWorking();
+}
+
+void Farm::hangWatchdogLoop()
+{
+    dev::setThreadName("watchdog");
+    const auto timeout = std::chrono::seconds(m_Settings.watchdogTimeout);
+    std::unique_lock<std::mutex> l(x_hangWatchdog);
+    while (!m_hangWatchdogStop.wait_for(l, std::chrono::seconds(5), [this]() { return m_hangWatchdogStopping; }))
     {
-        cerror << "GPU " << _minerIdx << " gave no sign of life for "
-               << m_Settings.watchdogTimeout << " seconds (GPU or driver hang)";
-        watchdogGiveUp(_minerIdx, "hung", true);
+        auto now = std::chrono::steady_clock::now();
+        auto lastCollect = std::chrono::steady_clock::time_point(
+            std::chrono::steady_clock::duration(m_lastCollect.load()));
+        if (now - lastCollect > timeout + std::chrono::seconds(10))
+        {
+            cerror << "Hashwarp's event loop is stuck since "
+                   << std::chrono::duration_cast<std::chrono::seconds>(now - lastCollect).count()
+                   << " seconds (GPU driver hang)";
+            watchdogGiveUp(-1, "hung", true);
+        }
+
+        if (!m_isMining.load(std::memory_order_relaxed))
+            continue;
+        std::vector<std::shared_ptr<Miner>> miners;
+        {
+            Guard g(x_minerWork);
+            miners = m_miners;
+        }
+        for (auto const& miner : miners)
+        {
+            if (!miner->isStopped() && miner->unresponsive(timeout))
+            {
+                cerror << "GPU " << miner->Index() << " gave no sign of life for "
+                       << m_Settings.watchdogTimeout << " seconds (GPU or driver hang)";
+                watchdogGiveUp(miner->Index(), "hung", true);
+            }
+        }
     }
 }
 
 void Farm::watchdogGiveUp(int _minerIdx, const std::string& _reason, bool _hung)
 {
-    m_watchdogGaveUp = true;
+    if (m_watchdogGaveUp.exchange(true))
+        return;
     g_exitCode = EXIT_CODE_WATCHDOG;
     if (!m_Settings.watchdogScript.empty())
     {
@@ -459,11 +520,12 @@ void Farm::watchdogGiveUp(int _minerIdx, const std::string& _reason, bool _hung)
         }
     }
 
-    // A hung GPU blocks its thread in the driver: a clean shutdown would hang too
+    // A hung GPU blocks its thread in the driver: a clean shutdown would hang too.
+    // quick_exit runs the at_quick_exit handlers (terminal restore)
     if (_hung)
     {
         cerror << "Exiting (code " << EXIT_CODE_WATCHDOG << ")";
-        std::_Exit(EXIT_CODE_WATCHDOG);
+        std::quick_exit(EXIT_CODE_WATCHDOG);
     }
     cerror << "Stopping hashwarp (exit code " << EXIT_CODE_WATCHDOG << ")";
     raise(SIGTERM);
@@ -805,8 +867,9 @@ void Farm::collectData(const boost::system::error_code& ec)
             m_telemetry.miners.at(minerIdx).sensors = sensors;
         }
 
-        if (m_Settings.watchdogTimeout && m_isMining.load(std::memory_order_relaxed))
-            watchdog(*miner, minerIdx, now);
+        if (m_Settings.watchdogTimeout && m_isMining.load(std::memory_order_relaxed) &&
+            miner->isStopped())
+            restartFailedMiner(*miner, minerIdx, now);
         m_telemetry.farm.hashrate = farm_hr;
     }
 
@@ -826,6 +889,8 @@ void Farm::collectData(const boost::system::error_code& ec)
         hashes += s.value;
     // Meaningless (a couple of lucky shares) until enough time passed
     m_telemetry.effectiveHashrate = window >= 120 ? hashes / window : 0;
+
+    m_lastCollect = now.time_since_epoch().count();
 
     // Resubmit timer for another loop
     m_collectTimer.expires_from_now(boost::posix_time::milliseconds(m_collectInterval));

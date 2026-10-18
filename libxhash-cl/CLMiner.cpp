@@ -482,14 +482,17 @@ void CLMiner::workLoop()
 
 void CLMiner::kick_miner()
 {
-    // Memory for abort Cannot be static because crashes on macOS.
-    const uint32_t one = 1;
+    // Non blocking: kick_miner runs on the io thread, which a hung GPU must not stall.
+    // The source (m_abortFlag) lives as long as the miner.
     if (!m_settings.noExit)
     {
         boost::mutex::scoped_lock l(x_abortqueue);
         if (!m_abortqueue.empty())
-            m_abortqueue[0].enqueueWriteBuffer(
-                m_searchBuffer[0], CL_TRUE, offsetof(SearchResults, abort), sizeof(one), &one);
+        {
+            m_abortqueue[0].enqueueWriteBuffer(m_searchBuffer[0], CL_FALSE,
+                offsetof(SearchResults, abort), sizeof(m_abortFlag), &m_abortFlag);
+            m_abortqueue[0].flush();
+        }
     }
 
     m_new_work_signal.notify_one();

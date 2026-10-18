@@ -239,6 +239,7 @@ enum MinerPauseEnum
     PauseDueToFarmPaused,
     PauseDueToInsufficientMemory,
     PauseDueToInitEpochError,
+    PauseDueToFailure,  // Kept failing: left stopped by the watchdog
     Pause_MAX  // Must always be last as a placeholder of max count
 };
 

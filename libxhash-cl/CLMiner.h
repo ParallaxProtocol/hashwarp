@@ -64,6 +64,7 @@ private:
     vector<cl::CommandQueue> m_queue;
     vector<cl::CommandQueue> m_abortqueue;  // Guarded by x_abortqueue (used by kick_miner)
     boost::mutex x_abortqueue;
+    const uint32_t m_abortFlag = 1;  // Written to the search buffer by kick_miner
     cl::Kernel m_searchKernel;
     cl::Kernel m_dagKernel;
     cl::Device m_device;

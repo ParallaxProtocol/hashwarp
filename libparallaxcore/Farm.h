@@ -18,7 +18,10 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <deque>
+#include <mutex>
+#include <set>
 #include <list>
 #include <thread>
 
@@ -269,12 +272,29 @@ private:
 
     // Pauses, resumes or stops on the temperature limits
     void checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& _sensors);
+    std::set<int> m_memTempWarned;  // GPUs warned about --mem-temp-stop without a sensor
 
-    // Restarts GPUs whose work loop failed, gives up on hung or failing ones
-    void watchdog(Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now);
+    // Restarts GPUs whose work loop failed (with backoff), leaves stopped the
+    // ones which keep failing. Runs with the collection on the io thread
+    void restartFailedMiner(Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now);
+    struct MinerRestarts
+    {
+        std::deque<std::chrono::steady_clock::time_point> times;  // Of the last hour
+        std::chrono::steady_clock::time_point next;               // Not before
+        bool givenUp = false;
+    };
+    std::map<int, MinerRestarts> m_minerRestarts;
+
+    // Detects hung GPUs (and a stuck io thread) on a thread of its own, so a
+    // driver call blocking the io thread can't hide a hang
+    void hangWatchdogLoop();
     void watchdogGiveUp(int _minerIdx, const std::string& _reason, bool _hung);
-    std::map<int, std::deque<std::chrono::steady_clock::time_point>> m_minerRestarts;
-    bool m_watchdogGaveUp = false;
+    std::thread m_hangWatchdog;
+    std::mutex x_hangWatchdog;
+    std::condition_variable m_hangWatchdogStop;
+    bool m_hangWatchdogStopping = false;
+    std::atomic<int64_t> m_lastCollect = {0};  // steady_clock ticks of the last collection
+    std::atomic<bool> m_watchdogGaveUp = {false};
 
     /**
      * @brief Spawn a file - must be located in the directory of hashwarp binary
