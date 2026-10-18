@@ -28,8 +28,9 @@ using namespace eth;
 Result XHashAux::eval(int epoch, h256 const& _headerHash, uint64_t _nonce) noexcept
 {
     auto headerHash = xhash::hash256_from_bytes(_headerHash.data());
-    // Use full epoch context to match miner-side evaluation.
-    auto& context = xhash::get_global_epoch_context_full(epoch);
+    // The light context (shared with Farm) is enough to verify a handful of shares:
+    // the full one would lazily fill a host buffer as large as the DAG.
+    auto& context = xhash::get_global_epoch_context(epoch);
     auto result = xhash::hash(context, headerHash, _nonce);
     h256 mix{reinterpret_cast<byte*>(result.mix_hash.bytes), h256::ConstructFromPointer};
     h256 final{reinterpret_cast<byte*>(result.final_hash.bytes), h256::ConstructFromPointer};
