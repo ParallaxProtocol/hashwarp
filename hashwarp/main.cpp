@@ -42,6 +42,7 @@
 #endif
 
 #include "Options.h"
+#include "Wizard.h"
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <execinfo.h>
@@ -679,17 +680,40 @@ int main(int argc, char** argv)
          << "Build: " << bi->system_name << "/" << bi->build_type << "/" << bi->compiler_id << endl
          << endl;
 
-    // Without arguments use the default configuration file, if any
+    // Without arguments use the default configuration file, or create one
     std::vector<std::string> args(argv, argv + argc);
     if (argc < 2)
     {
+#if defined(_WIN32)
+        // Most likely started from the explorer: keep the window open on exit
+        if (hashwarp::isInteractive())
+            std::atexit([]() {
+                cout << endl << "Press Enter to exit" << endl;
+                std::string line;
+                std::getline(std::cin, line);
+            });
+#endif
         std::string config = hashwarp::findDefaultConfig();
         if (config.empty())
         {
-            cerr << "No arguments and no hashwarp.json configuration found." << endl
-                 << "Try 'hashwarp --help' to get a list of arguments." << endl
-                 << endl;
-            return 1;
+            if (!hashwarp::isInteractive())
+            {
+                cerr << "No arguments and no hashwarp.json configuration found." << endl
+                     << "Try 'hashwarp --help' to get a list of arguments." << endl
+                     << endl;
+                return 1;
+            }
+            config = hashwarp::defaultConfigPath();
+            try
+            {
+                if (!hashwarp::runWizard(config, std::cin, cout))
+                    return 0;
+            }
+            catch (const std::exception& ex)
+            {
+                cerr << "Error: " << ex.what() << endl;
+                return 2;
+            }
         }
         cout << "Using configuration " << config << endl << endl;
         args.push_back("--config");

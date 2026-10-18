@@ -5,6 +5,7 @@ add_executable(hashwarp-unittests
   unittests/test_options.cpp
   unittests/test_log.cpp
   unittests/test_uri.cpp
+  unittests/test_wizard.cpp
   unittests/globals.cpp
 )
 target_include_directories(hashwarp-unittests PRIVATE ${PROJECT_SOURCE_DIR})

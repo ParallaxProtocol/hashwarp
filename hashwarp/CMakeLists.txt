@@ -8,7 +8,7 @@ hunter_add_package(CLI11)
 find_package(CLI11 CONFIG REQUIRED)
 
 # Command line and configuration options (shared with the unit tests)
-add_library(hashwarp-options STATIC Options.cpp Options.h)
+add_library(hashwarp-options STATIC Options.cpp Options.h Wizard.cpp Wizard.h)
 target_include_directories(hashwarp-options PUBLIC ..)
 target_link_libraries(hashwarp-options PUBLIC CLI11::CLI11 PRIVATE poolprotocols devcore
   jsoncpp_static Boost::filesystem)
