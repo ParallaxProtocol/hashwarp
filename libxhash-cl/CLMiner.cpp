@@ -345,16 +345,39 @@ void CLMiner::workLoop()
                 continue;
             }
 
-            if (current.header != w.header)
+            if (current.header != w.header || epochInitFailed())
             {
-                if (current.epoch != w.epoch)
+                if (current.epoch != w.epoch || epochInitFailed())
                 {
-                    m_abortqueue.clear();
+                    if (!canInitEpoch(w.epoch))
+                    {
+                        boost::system_time const timeout =
+                            boost::get_system_time() + boost::posix_time::seconds(3);
+                        boost::mutex::scoped_lock l(x_work);
+                        m_new_work_signal.timed_wait(l, timeout);
+                        continue;
+                    }
+
+                    {
+                        boost::mutex::scoped_lock l(x_abortqueue);
+                        m_abortqueue.clear();
+                    }
 
                     if (!initEpoch())
                         break;  // This will simply exit the thread
 
-                    m_abortqueue.push_back(cl::CommandQueue(m_context[0], m_device));
+                    // Release whatever was partially set up and keep
+                    // current stale so we retry later
+                    if (epochInitFailed())
+                    {
+                        clear_buffer();
+                        continue;
+                    }
+
+                    {
+                        boost::mutex::scoped_lock l(x_abortqueue);
+                        m_abortqueue.push_back(cl::CommandQueue(m_context[0], m_device));
+                    }
                 }
 
                 // Upper 64 bits of the boundary.
@@ -442,9 +465,13 @@ void CLMiner::kick_miner()
 {
     // Memory for abort Cannot be static because crashes on macOS.
     const uint32_t one = 1;
-    if (!m_settings.noExit && !m_abortqueue.empty())
-        m_abortqueue[0].enqueueWriteBuffer(
-            m_searchBuffer[0], CL_TRUE, offsetof(SearchResults, abort), sizeof(one), &one);
+    if (!m_settings.noExit)
+    {
+        boost::mutex::scoped_lock l(x_abortqueue);
+        if (!m_abortqueue.empty())
+            m_abortqueue[0].enqueueWriteBuffer(
+                m_searchBuffer[0], CL_TRUE, offsetof(SearchResults, abort), sizeof(one), &one);
+    }
 
     m_new_work_signal.notify_one();
 }
@@ -663,7 +690,7 @@ bool CLMiner::initDevice()
         {
             cllog << "OpenCL " << m_deviceDescriptor.clPlatformVersion
                   << " not supported. Minimum required version is 1.2";
-            throw new std::runtime_error("OpenCL 1.2 required");
+            return false;
         }
     }
 
@@ -899,7 +926,7 @@ bool CLMiner::initEpoch_internal()
     {
         cllog << ethCLErrorHelper("OpenCL init failed", err);
         pause(MinerPauseEnum::PauseDueToInitEpochError);
-        return false;
+        return true;
     }
     return true;
 }

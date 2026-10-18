@@ -62,7 +62,8 @@ private:
 
     vector<cl::Context> m_context;
     vector<cl::CommandQueue> m_queue;
-    vector<cl::CommandQueue> m_abortqueue;
+    vector<cl::CommandQueue> m_abortqueue;  // Guarded by x_abortqueue (used by kick_miner)
+    boost::mutex x_abortqueue;
     cl::Kernel m_searchKernel;
     cl::Kernel m_dagKernel;
     cl::Device m_device;
@@ -73,13 +74,17 @@ private:
     vector<cl::Buffer> m_searchBuffer;
 
     void clear_buffer() {
+        // First stop kick_miner() from touching m_searchBuffer
+        {
+            boost::mutex::scoped_lock l(x_abortqueue);
+            m_abortqueue.clear();
+        }
         m_dag.clear();
         m_light.clear();
         m_header.clear();
         m_searchBuffer.clear();
         m_queue.clear();
         m_context.clear();
-        m_abortqueue.clear();
     }
 
     CLSettings m_settings;

@@ -371,6 +371,11 @@ public:
     void setWork(WorkPackage const& _work);
 
     /**
+     * @brief Returns current workpackage this miner is working on
+     */
+    WorkPackage work() const;
+
+    /**
      * @brief Assigns Epoch context to this instance
      */
     void setEpoch(EpochContext const& _ec) { m_epochContext = _ec; }
@@ -436,9 +441,17 @@ protected:
     virtual bool initEpoch_internal() = 0;
 
     /**
-     * @brief Returns current workpackage this miner is working on
+     * @brief Whether the last attempt to initialize an epoch left this miner paused
      */
-    WorkPackage work() const;
+    bool epochInitFailed();
+
+    /**
+     * @brief Whether the miner may (re)try to initialize the given epoch.
+     * @note After an initialization failure retries are throttled: a device with
+     *       insufficient memory waits for a different epoch, any other error is
+     *       retried at most every c_epochInitRetrySeconds
+     */
+    bool canInitEpoch(int _epoch);
 
     void updateHashRate(uint32_t _groupSize, uint32_t _increment) noexcept;
 
@@ -463,9 +476,19 @@ protected:
     boost::condition_variable m_dag_loaded_signal;
 
 private:
+    // Pause reasons that stop the miner from receiving work. Epoch initialization
+    // failures are not among them: the miner needs work to retry the initialization.
+    bool pausedForWork();
+
+    static const int c_epochInitRetrySeconds = 30;
+
     bitset<MinerPauseEnum::Pause_MAX> m_pauseFlags;
 
     WorkPackage m_work;
+    WorkPackage m_lastWork;  // Most recent work received, restored on resume
+
+    int m_failedEpoch = -1;
+    std::chrono::steady_clock::time_point m_epochInitFailureTime;
 
     std::chrono::steady_clock::time_point m_hashTime = std::chrono::steady_clock::now();
     std::atomic<float> m_hashRate = {0.0};

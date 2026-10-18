@@ -35,12 +35,15 @@ DeviceDescriptor Miner::getDescriptor()
 
 void Miner::setWork(WorkPackage const& _work)
 {
+    bool voidWork = pausedForWork();
     {
 
         boost::mutex::scoped_lock l(x_work);
 
+        m_lastWork = _work;
+
         // Void work if this miner is paused
-        if (paused())
+        if (voidWork)
             m_work.header = h256();
         else
             m_work = _work;
@@ -55,10 +58,47 @@ void Miner::setWork(WorkPackage const& _work)
 
 void Miner::pause(MinerPauseEnum what) 
 {
-    boost::mutex::scoped_lock l(x_pause);
-    m_pauseFlags.set(what);
-    m_work.header = h256();
+    {
+        boost::mutex::scoped_lock l(x_pause);
+        m_pauseFlags.set(what);
+        if (what == MinerPauseEnum::PauseDueToInsufficientMemory ||
+            what == MinerPauseEnum::PauseDueToInitEpochError)
+        {
+            m_failedEpoch = m_epochContext.epochNumber;
+            m_epochInitFailureTime = std::chrono::steady_clock::now();
+        }
+    }
+    {
+        boost::mutex::scoped_lock l(x_work);
+        m_work.header = h256();
+    }
     kick_miner();
+}
+
+bool Miner::pausedForWork()
+{
+    boost::mutex::scoped_lock l(x_pause);
+    return m_pauseFlags.test(MinerPauseEnum::PauseDueToOverHeating) ||
+           m_pauseFlags.test(MinerPauseEnum::PauseDueToAPIRequest) ||
+           m_pauseFlags.test(MinerPauseEnum::PauseDueToFarmPaused);
+}
+
+bool Miner::epochInitFailed()
+{
+    boost::mutex::scoped_lock l(x_pause);
+    return m_pauseFlags.test(MinerPauseEnum::PauseDueToInsufficientMemory) ||
+           m_pauseFlags.test(MinerPauseEnum::PauseDueToInitEpochError);
+}
+
+bool Miner::canInitEpoch(int _epoch)
+{
+    boost::mutex::scoped_lock l(x_pause);
+    if (m_pauseFlags.test(MinerPauseEnum::PauseDueToInsufficientMemory))
+        return _epoch != m_failedEpoch;
+    if (m_pauseFlags.test(MinerPauseEnum::PauseDueToInitEpochError))
+        return std::chrono::steady_clock::now() - m_epochInitFailureTime >=
+               std::chrono::seconds(c_epochInitRetrySeconds);
+    return true;
 }
 
 bool Miner::paused()
@@ -105,14 +145,22 @@ std::string Miner::pausedString()
 
 void Miner::resume(MinerPauseEnum fromwhat) 
 {
-    boost::mutex::scoped_lock l(x_pause);
-    m_pauseFlags.reset(fromwhat);
-    //if (!m_pauseFlags.any())
-    //{
-    //    // TODO Push most recent job from farm ?
-    //    // If we do not push a new job the miner will stay idle
-    //    // till a new job arrives
-    //}
+    bool wasPausedForWork = pausedForWork();
+    {
+        boost::mutex::scoped_lock l(x_pause);
+        m_pauseFlags.reset(fromwhat);
+    }
+
+    // Push the most recent job back, otherwise the miner
+    // would stay idle till a new job arrives
+    if (wasPausedForWork && !pausedForWork())
+    {
+        {
+            boost::mutex::scoped_lock l(x_work);
+            m_work = m_lastWork;
+        }
+        kick_miner();
+    }
 }
 
 float Miner::RetrieveHashRate() noexcept

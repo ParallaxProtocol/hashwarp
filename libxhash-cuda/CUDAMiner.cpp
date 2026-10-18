@@ -213,11 +213,24 @@ void CUDAMiner::workLoop()
                 continue;
             }
 
-            // Epoch change ?
-            if (current.epoch != w.epoch)
+            // Epoch change (or a previous initialization failed) ?
+            if (current.epoch != w.epoch || epochInitFailed())
             {
+                if (!canInitEpoch(w.epoch))
+                {
+                    boost::system_time const timeout =
+                        boost::get_system_time() + boost::posix_time::seconds(3);
+                    boost::mutex::scoped_lock l(x_work);
+                    m_new_work_signal.timed_wait(l, timeout);
+                    continue;
+                }
+
                 if (!initEpoch())
                     break;  // This will simply exit the thread
+
+                // Keep current.epoch stale on failure so we retry later
+                if (epochInitFailed())
+                    continue;
 
                 // As DAG generation takes a while we need to
                 // ensure we're on latest job, not on the one
