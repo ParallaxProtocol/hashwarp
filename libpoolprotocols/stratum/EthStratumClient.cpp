@@ -601,11 +601,13 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
 
     Otherwise let's go through an autodetection.
 
-    Autodetection process passes all known stratum modes.
-    - 1st pass EthStratumClient::ETHEREUMSTRATUM2 (3)
-    - 2nd pass EthStratumClient::ETHEREUMSTRATUM  (2)
-    - 3rd pass EthStratumClient::ETHPROXY         (1)
-    - 4th pass EthStratumClient::STRATUM          (0)
+    Autodetection passes these stratum modes:
+    - 1st pass EthStratumClient::ETHEREUMSTRATUM  (2)
+    - 2nd pass EthStratumClient::ETHPROXY         (1)
+    - 3rd pass EthStratumClient::STRATUM          (0)
+    EthStratumClient::ETHEREUMSTRATUM2 (3) only when asked for: the XHash pools speak
+    EthereumStratum/1.0.0 and don't answer its mining.hello, which cost a response
+    timeout on every connection.
     */
 
     if (m_conn->Version() < 999)
@@ -615,7 +617,7 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
     else
     {
         if (!m_conn->StratumModeConfirmed() && m_conn->StratumMode() == 999)
-            m_conn->SetStratumMode(3, false);
+            m_conn->SetStratumMode(2, false);
     }
 
 

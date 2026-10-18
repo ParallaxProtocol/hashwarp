@@ -63,7 +63,7 @@ TEST_F(WizardTest, known_pool)
     EXPECT_TRUE(o.tls);
     EXPECT_FALSE(o.worker.empty());
     ASSERT_EQ(buildPoolUris(o).size(), 1u);
-    EXPECT_EQ(buildPoolUris(o)[0].compare(0, 13, "stratum+ssl:/"), 0);
+    EXPECT_EQ(buildPoolUris(o)[0].compare(0, 12, "stratumss://"), 0);
 }
 
 TEST_F(WizardTest, other_pool)

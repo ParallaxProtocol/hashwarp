@@ -38,7 +38,7 @@ hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker ri
 | `-w, --worker` | The rig's name on the pool dashboard |
 | `-p, --password` | Pool password, `x` by default |
 | `--tls` | Connect to `host:port` pools with TLS |
-| `--esm` | Stratum flavour when the pool needs one: `0` EthProxy, `1`/`2` EthereumStratum/1.0.0 (NiceHash), `3` EthereumStratum/2.0.0. By default hashwarp detects it |
+| `--esm` | Stratum flavour when the pool needs one: `0` EthProxy, `1`/`2` EthereumStratum/1.0.0 (NiceHash), `3` EthereumStratum/2.0.0. By default hashwarp tries EthereumStratum/1.0.0, then EthProxy, then plain Stratum; 2.0.0 only with `--esm 3` |
 | `--failover-timeout` | Minutes on a failover pool before trying the first one again |
 | `--retry-delay` | Seconds before reconnecting (doubles on each failed attempt, up to 120). A single pool is retried forever |
 

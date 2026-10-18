@@ -186,15 +186,18 @@ std::string userInfo(const Options& _opts)
     return ret + "@";
 }
 
-std::string stratumVariant(const std::string& _esm)
+// URL scheme of a host:port pool. "stratum+tcp" is plain Stratum, only the bare
+// schemes detect the flavour ("stratumss" with TLS 1.2 or newer, like "+ssl")
+std::string stratumScheme(const std::string& _esm, bool _tls)
 {
+    const char* tail = _tls ? "+ssl" : "+tcp";
     if (_esm == "0")
-        return "stratum1";  // EthProxy
+        return std::string("stratum1") + tail;  // EthProxy
     if (_esm == "1" || _esm == "2")
-        return "stratum2";  // EthereumStratum/1.0.0 (NiceHash)
+        return std::string("stratum2") + tail;  // EthereumStratum/1.0.0 (NiceHash)
     if (_esm == "3")
-        return "stratum3";  // EthereumStratum/2.0.0
-    return "stratum";       // Autodetect
+        return std::string("stratum3") + tail;  // EthereumStratum/2.0.0
+    return _tls ? "stratumss" : "stratum";      // Autodetect
 }
 
 void checkPerGpu(const std::vector<unsigned>& _values, const std::set<unsigned>& _allowed,
@@ -574,8 +577,7 @@ std::vector<std::string> buildPoolUris(const Options& _o)
                 throw std::invalid_argument("Pool " + pool + " has no port, use host:port");
             if (_o.wallet.empty())
                 throw std::invalid_argument("--wallet is required to mine on pool " + pool);
-            uris.push_back(stratumVariant(_o.esm) + (_o.tls ? "+ssl" : "+tcp") + "://" +
-                           userInfo(_o) + pool);
+            uris.push_back(stratumScheme(_o.esm, _o.tls) + "://" + userInfo(_o) + pool);
             continue;
         }
 

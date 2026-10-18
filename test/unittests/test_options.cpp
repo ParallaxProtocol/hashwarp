@@ -37,9 +37,10 @@ TEST(options, host_port_pool_gets_wallet_and_worker)
     auto o = parse({"--pool", "pool.example.com:3333", "--wallet", c_wallet, "--worker", "rig1"});
     auto uris = buildPoolUris(o);
     ASSERT_EQ(uris.size(), 1u);
-    EXPECT_EQ(uris[0], "stratum+tcp://" + c_wallet + ".rig1:x@pool.example.com:3333");
+    EXPECT_EQ(uris[0], "stratum://" + c_wallet + ".rig1:x@pool.example.com:3333");
 
     dev::URI uri(uris[0]);
+    EXPECT_EQ(uri.Version(), 999u);  // the stratum flavour is detected
     EXPECT_EQ(uri.User(), c_wallet);
     EXPECT_EQ(uri.Workername(), "rig1");
     EXPECT_EQ(uri.Host(), "pool.example.com");
@@ -56,6 +57,12 @@ TEST(options, tls_and_esm_pick_the_scheme)
 
     o = parse({"-o", "pool.example.com:3333", "-u", c_wallet, "--esm", "0"});
     EXPECT_EQ(buildPoolUris(o)[0].substr(0, 15), "stratum1+tcp://");
+
+    // TLS without --esm still detects the flavour
+    o = parse({"-o", "pool.example.com:4443", "-u", c_wallet, "--tls"});
+    dev::URI uri(buildPoolUris(o)[0]);
+    EXPECT_EQ(uri.Version(), 999u);
+    EXPECT_EQ(uri.SecLevel(), dev::SecureLevel::TLS12);
 }
 
 TEST(options, failover_lists)
