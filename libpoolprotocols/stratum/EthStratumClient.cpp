@@ -236,7 +236,7 @@ void EthStratumClient::disconnect_finalize()
     // Release locking flag and set connection status
 #ifdef DEV_BUILD
     if (g_logOptions & LOG_CONNECT)
-        cnote << "Socket disconnected from " << ActiveEndPoint();
+        cdebug << "Socket disconnected from " << ActiveEndPoint();
 #endif
 
     // Release session if exits
@@ -332,7 +332,7 @@ void EthStratumClient::start_connect()
 
 #ifdef DEV_BUILD
         if (g_logOptions & LOG_CONNECT)
-            cnote << ("Trying " + toString(m_endpoint) + " ...");
+            cdebug << ("Trying " + toString(m_endpoint) + " ...");
 #endif
 
         clear_response_pleas();
@@ -515,7 +515,7 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
 
 #ifdef DEV_BUILD
     if (g_logOptions & LOG_CONNECT)
-        cnote << "Socket connected to " << ActiveEndPoint();
+        cdebug << "Socket connected to " << ActiveEndPoint();
 #endif
 
     if (m_conn->SecLevel() != SecureLevel::NONE)
@@ -1746,7 +1746,7 @@ void EthStratumClient::onRecvSocketDataCompleted(
                 {
                     // Out received message only for debug purpouses
                     if (g_logOptions & LOG_JSON)
-                        cnote << " << " << line;
+                        cdebug << " << " << line;
 
                     // Test validity of chunk and process
                     Json::Value jMsg;
@@ -1841,7 +1841,7 @@ void EthStratumClient::sendSocketData()
         os << *line << std::endl;
         // Out received message only for debug purpouses
         if (g_logOptions & LOG_JSON)
-            cnote << " >> " << *line;
+            cdebug << " >> " << *line;
 
         delete line;
     }

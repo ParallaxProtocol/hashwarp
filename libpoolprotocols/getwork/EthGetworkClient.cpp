@@ -164,7 +164,7 @@ void EthGetworkClient::handle_connect(const boost::system::error_code& ec)
 
                     // Out received message only for debug purpouses
                     if (g_logOptions & LOG_JSON)
-                        cnote << " >> " << *line;
+                        cdebug << " >> " << *line;
 
                     delete line;
 
@@ -301,7 +301,7 @@ void EthGetworkClient::handle_read(
             {
                 // Out received message only for debug purpouses
                 if (g_logOptions & LOG_JSON)
-                    cnote << " << " << line;
+                    cdebug << " << " << line;
 
                 // Test validity of chunk and process
                 Json::Value jRes;

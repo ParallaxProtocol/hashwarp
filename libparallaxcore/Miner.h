@@ -160,6 +160,18 @@ struct TelemetryAccountType
     SolutionAccountType solutions;
 };
 
+// Per device settings given by the user (0 = use the global or default value)
+struct DeviceSettings
+{
+    unsigned cuGridSize = 0;
+    unsigned cuBlockSize = 0;
+    unsigned cuStreams = 0;
+    unsigned clGlobalWorkMultiplier = 0;
+    unsigned clLocalWorkSize = 0;
+    unsigned tempStop = 0;    // Pause at this core temperature
+    unsigned tempResume = 0;  // Resume at this core temperature
+};
+
 struct DeviceDescriptor
 {
     DeviceTypeEnum type = DeviceTypeEnum::Unknown;
@@ -199,6 +211,8 @@ struct DeviceDescriptor
     unsigned int cuComputeMinor;
 
     int cpCpuNumer;   // For CPU
+
+    DeviceSettings settings;
 };
 
 struct HwMonitorInfo

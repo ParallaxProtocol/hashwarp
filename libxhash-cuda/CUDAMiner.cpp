@@ -33,10 +33,24 @@ struct CUDAChannel : public LogChannel
 };
 #define cudalog clog(CUDAChannel)
 
+namespace
+{
+CUSettings withDeviceSettings(CUSettings _settings, const DeviceDescriptor& _device)
+{
+    if (_device.settings.cuGridSize)
+        _settings.gridSize = _device.settings.cuGridSize;
+    if (_device.settings.cuBlockSize)
+        _settings.blockSize = _device.settings.cuBlockSize;
+    if (_device.settings.cuStreams)
+        _settings.streams = _device.settings.cuStreams;
+    return _settings;
+}
+}  // namespace
+
 CUDAMiner::CUDAMiner(unsigned _index, CUSettings _settings, DeviceDescriptor& _device)
   : Miner("cuda-", _index),
-    m_settings(_settings),
-    m_batch_size(_settings.gridSize * _settings.blockSize)
+    m_settings(withDeviceSettings(_settings, _device)),
+    m_batch_size(m_settings.gridSize * m_settings.blockSize)
 {
     m_deviceDescriptor = _device;
 }

@@ -256,6 +256,10 @@ CLMiner::CLMiner(unsigned _index, CLSettings _settings, DeviceDescriptor& _devic
   : Miner("cl-", _index), m_settings(_settings)
 {
     m_deviceDescriptor = _device;
+    if (_device.settings.clLocalWorkSize)
+        m_settings.localWorkSize = _device.settings.clLocalWorkSize;
+    if (_device.settings.clGlobalWorkMultiplier)
+        m_settings.globalWorkSizeMultiplier = _device.settings.clGlobalWorkMultiplier;
     m_settings.localWorkSize = ((m_settings.localWorkSize + 7) / 8) * 8;
     m_settings.globalWorkSize = m_settings.localWorkSize * m_settings.globalWorkSizeMultiplier;
 }

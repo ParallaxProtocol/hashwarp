@@ -1,22 +1,24 @@
 cmake_policy(SET CMP0015 NEW)
 
-aux_source_directory(. SRC_LIST)
-
 include_directories(BEFORE ..)
 
 set(EXECUTABLE hashwarp)
 
-file(GLOB HEADERS "*.h")
+hunter_add_package(CLI11)
+find_package(CLI11 CONFIG REQUIRED)
 
-add_executable(${EXECUTABLE} ${SRC_LIST} ${HEADERS})
+# Command line and configuration options (shared with the unit tests)
+add_library(hashwarp-options STATIC Options.cpp Options.h)
+target_include_directories(hashwarp-options PUBLIC ..)
+target_link_libraries(hashwarp-options PUBLIC CLI11::CLI11 PRIVATE poolprotocols devcore
+  jsoncpp_static Boost::filesystem)
+
+add_executable(${EXECUTABLE} main.cpp DBusInt.h)
 if(MSVC)
   target_sources(${EXECUTABLE} PRIVATE hashwarp.rc)
 endif()
 
-hunter_add_package(CLI11)
-find_package(CLI11 CONFIG REQUIRED)
-
-target_link_libraries(hashwarp PRIVATE parallaxcore poolprotocols devcore hashwarp-buildinfo CLI11::CLI11 Boost::system Boost::thread)
+target_link_libraries(hashwarp PRIVATE hashwarp-options parallaxcore poolprotocols devcore hashwarp-buildinfo Boost::system Boost::thread)
 
 if(ETHDBUS)
   find_package(PkgConfig)

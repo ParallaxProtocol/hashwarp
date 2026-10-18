@@ -537,7 +537,7 @@ void Farm::submitProofAsync(Solution const& _s)
 
 #ifdef DEV_BUILD
     if (g_logOptions & LOG_SUBMIT)
-        cnote << "Submit time: "
+        cdebug << "Submit time: "
               << std::chrono::duration_cast<std::chrono::microseconds>(
                      std::chrono::steady_clock::now() - _s.tstamp)
                      .count()
@@ -657,15 +657,25 @@ void Farm::collectData(const boost::system::error_code& ec)
             }
 
 
-            // If temperature control has been enabled call
+            // If temperature control has been enabled (for this GPU or all)
             // check threshold
-            if (m_Settings.tempStop)
+            const DeviceSettings& ds = miner->getDescriptor().settings;
+            unsigned tempStop = ds.tempStop ? ds.tempStop : m_Settings.tempStop;
+            unsigned tempResume = ds.tempStop ? ds.tempResume : m_Settings.tempStart;
+            if (tempStop && tempC)
             {
                 bool paused = miner->pauseTest(MinerPauseEnum::PauseDueToOverHeating);
-                if (!paused && (tempC >= m_Settings.tempStop))
+                if (!paused && (tempC >= tempStop))
+                {
+                    cwarn << "GPU " << minerIdx << " reached " << tempC << "C, pausing until "
+                          << tempResume << "C";
                     miner->pause(MinerPauseEnum::PauseDueToOverHeating);
-                if (paused && (tempC <= m_Settings.tempStart))
+                }
+                if (paused && (tempC <= tempResume))
+                {
+                    cnote << "GPU " << minerIdx << " cooled down to " << tempC << "C, resuming";
                     miner->resume(MinerPauseEnum::PauseDueToOverHeating);
+                }
             }
 
             m_telemetry.miners.at(minerIdx).sensors.tempC = tempC;
