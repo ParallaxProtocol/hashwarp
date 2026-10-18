@@ -768,7 +768,9 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
 
     // Retrieve essential values
     _id = responseObject.get("id", unsigned(0)).asUInt();
-    _isSuccess = responseObject.get("error", Json::Value::null).empty();
+    // Some pools (rplant) send "error": false on success
+    const Json::Value& jError = responseObject.get("error", Json::Value::null);
+    _isSuccess = jError.empty() || (jError.isBool() && !jError.asBool());
     _errReason = (_isSuccess ? "" : processError(responseObject));
     _method = responseObject.get("method", "").asString();
     _isNotification = (_method != "" || _id == unsigned(0));
@@ -1091,6 +1093,12 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 enqueue_response_plea();
                 send(jReq);
             }
+        }
+
+        else if (_id == 3 && !m_authpending.load(std::memory_order_relaxed))
+        {
+            // A second reply with the id of mining.authorize: rplant answers
+            // mining.extranonce.subscribe with it, before the authorization
         }
 
         else if (_id == 3 && m_conn->StratumMode() != ETHEREUMSTRATUM2)

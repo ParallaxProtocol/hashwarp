@@ -60,7 +60,11 @@ def make_handler(args):
                         ["mining.notify", "ae6812eb4cd7735a302a8a9dd95cf71f", "EthereumStratum/1.0.0"],
                         args.extranonce]})
                 elif method == "mining.extranonce.subscribe":
-                    self.send({"id": rid, "error": None, "result": True})
+                    if args.rplant:
+                        # rplant answers with the id of mining.authorize and "error": false
+                        self.send({"id": 3, "result": True, "error": False})
+                    else:
+                        self.send({"id": rid, "error": None, "result": True})
                 elif method == "mining.authorize":
                     self.send({"id": rid, "error": None, "result": True})
                     self.send({"id": None, "method": "mining.set_difficulty",
@@ -86,6 +90,7 @@ def main():
     ap.add_argument("--difficulty", type=float, default=0.05, help="in 2^32 hash units")
     ap.add_argument("--extranonce", default="0807")
     ap.add_argument("--job-seconds", type=float, default=20)
+    ap.add_argument("--rplant", action="store_true", help="reply like pool.rplant.xyz does")
     args = ap.parse_args()
     log("EthereumStratum/1.0.0 on %d, difficulty %g, extranonce %s" %
         (args.port, args.difficulty, args.extranonce))
