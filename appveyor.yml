@@ -17,10 +17,10 @@ clone_depth: 100
 
 environment:
   matrix:
+    # Windows CUDA toolkit (Linux installs 12.9, see below). The CUDA
+    # architectures are picked by libxhash-cuda/CMakeLists.txt from the
+    # toolkit version unless XHASH_CUDA_ARCHS is set.
     - CUDA_VER: "12.2.2"
-      # Pascal (60,61,62), Volta (70,72), Turing (75), Ampere (80,86,87),
-      # Ada (89), Hopper (90) — all supported by CUDA 12.2
-      XHASH_CUDA_ARCHS: "60;61;62;70;72;75;80;86;87;89;90"
   HUNTER_CACHE_TOKEN:
     secure: VnpF1MH5MEFvUI5MiMMMFlmbDdst+bfom5ZFVgalYPp/SYDhbejjXJm9Dla/IgpC
 
@@ -42,18 +42,18 @@ for:
       sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
       sudo apt install -y build-essential gcc g++ make wget pkg-config gcc-12 g++-12
 
-      wget https://developer.download.nvidia.com/compute/cuda/12.2.2/local_installers/cuda-repo-ubuntu2204-12-2-local_12.2.2-535.104.05-1_amd64.deb
-      sudo dpkg -i cuda-repo-ubuntu2204-12-2-local_12.2.2-535.104.05-1_amd64.deb
-      sudo cp /var/cuda-repo-ubuntu2204-12-2-local/cuda-*-keyring.gpg /usr/share/keyrings/
+      wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
+      sudo dpkg -i cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
+      sudo cp /var/cuda-repo-ubuntu2204-12-9-local/cuda-*-keyring.gpg /usr/share/keyrings/
       sudo apt update
 
       sudo apt install -y --no-install-recommends \
-      cuda-compiler-12-2 cuda-nvcc-12-2 cuda-cudart-dev-12-2 \
-      cuda-libraries-dev-12-2
+      cuda-compiler-12-9 cuda-nvcc-12-9 cuda-cudart-dev-12-9 \
+      cuda-libraries-dev-12-9
 
-      echo 'export PATH=/usr/local/cuda-12.2/bin:$PATH' | sudo tee /etc/profile.d/cuda-12-2.sh
-      echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.2/lib64:${LD_LIBRARY_PATH}' | sudo tee -a /etc/profile.d/cuda-12-2.sh
-      source /etc/profile.d/cuda-12-2.sh
+      echo 'export PATH=/usr/local/cuda-12.9/bin:$PATH' | sudo tee /etc/profile.d/cuda-12-9.sh
+      echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64:${LD_LIBRARY_PATH}' | sudo tee -a /etc/profile.d/cuda-12-9.sh
+      source /etc/profile.d/cuda-12-9.sh
 
       nvcc -V
 
@@ -63,28 +63,9 @@ for:
       cmake -S . -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DHUNTER_JOBS_NUMBER=$(nproc) \
-        -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.2/bin/nvcc \
-        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12 \
-        -DXHASH_CUDA_ARCHS="$XHASH_CUDA_ARCHS"
+        -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.9/bin/nvcc \
+        -DCMAKE_CUDA_HOST_COMPILER=/usr/bin/g++-12
       cmake --build build --config Release --target package -j"$(nproc)"
-
-      # Try to rename the package similarly to Windows
-      # Prefer cpack artifacts if present; otherwise zip/tar the build dir.
-      pkg="$(ls build/hashwarp-*.tar.gz 2>/dev/null || true)"
-      if [ -n "$pkg" ]; then
-        # If your CMake generates a buildinfo.sh, source it; otherwise, keep default name
-        if [ -f build/hashwarp/buildinfo.sh ]; then
-          . build/hashwarp/buildinfo.sh
-          new="build/${project_name}-${project_version}-linux-$(uname -m).tar.gz"
-          mv "$pkg" "$new"
-          echo "Renamed package to: $new"
-        else
-          echo "Package produced: $pkg"
-        fi
-      else
-        echo "No cpack artifact found; creating a fallback tarball."
-        tar czf build/hashwarp-linux-$(uname -m).tar.gz -C build hashwarp || true
-      fi
 
   # --------- WINDOWS JOB ----------
   - matrix:
@@ -119,12 +100,9 @@ for:
 
     build_script:
       - call "%ProgramFiles(x86)%\Microsoft Visual Studio\2017\Community\Common7\Tools\VsMSBuildCmd.bat"
-      - set CMAKE_ARGS=-G "Visual Studio 15 2017 Win64" -H. -Bbuild -DHUNTER_JOBS_NUMBER=%NUMBER_OF_PROCESSORS% -DXHASH_CUDA_ARCHS=%XHASH_CUDA_ARCHS%
+      - set CMAKE_ARGS=-G "Visual Studio 15 2017 Win64" -H. -Bbuild -DHUNTER_JOBS_NUMBER=%NUMBER_OF_PROCESSORS%
       - cmake %CMAKE_ARGS%
       - cmake --build build --config Release --target package
-      - ps: |
-          . build/hashwarp/buildinfo.ps1
-          mv build/hashwarp.zip build/$env:project_name-$env:project_version-cuda$env:CUDA_VER-$env:system_name-$env:system_processor.zip
 
 artifacts:
   - path: build/hashwarp-*.zip

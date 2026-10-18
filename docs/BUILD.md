@@ -160,6 +160,9 @@ cmake .. -DXHASHCUDA=ON -DXHASHCL=OFF
 * `-DAPICORE=ON` - enable API Server, `ON` by default.
 * `-DETHDBUS=ON` - enable D-Bus support, `OFF` by default.
 * `-DUSE_SYS_OPENCL=ON` - Use system OpenCL, `OFF` by default, unless on macOS. Specify to use local **ROCm-OpenCL** package.
+* `-DXHASH_CUDA_ARCHS="..."` - CUDA architectures to build (also read from the `XHASH_CUDA_ARCHS`
+  environment variable), e.g. `"86-real;89-real;120-real;120-virtual"`. By default every
+  architecture supported by the CUDA toolkit from Pascal (Turing with CUDA 13) to Blackwell is built.
 
 ## Disable Hunter
 
