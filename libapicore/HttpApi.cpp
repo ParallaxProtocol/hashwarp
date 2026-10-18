@@ -151,14 +151,10 @@ ParseResult parseHttpRequest(const std::string& _buffer, HttpRequest& _request, 
     auto cl = _request.headers.find("content-length");
     if (cl != _request.headers.end())
     {
-        try
-        {
-            bodyLength = std::stoul(cl->second);
-        }
-        catch (const std::exception&)
-        {
+        if (cl->second.empty() || cl->second.size() > 9 ||
+            cl->second.find_first_not_of("0123456789") != std::string::npos)
             return ParseResult::Invalid;
-        }
+        bodyLength = std::stoul(cl->second);
     }
     size_t total = headerEnd + sepLen + bodyLength;
     if (total > c_maxRequestSize)

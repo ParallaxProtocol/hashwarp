@@ -324,7 +324,8 @@ void ApiServer::begin_accept()
         return;
 
     auto session =
-        std::make_shared<ApiConnection>(m_io_strand, ++lastSessionId, m_readonly, m_password);
+        std::make_shared<ApiConnection>(m_io_strand, ++lastSessionId, m_readonly, m_password,
+            boost::asio::ip::address::from_string(m_address).is_loopback());
     m_acceptor.async_accept(
         session->socket(), m_io_strand.wrap(boost::bind(&ApiServer::handle_accept, this, session,
                                boost::asio::placeholders::error)));
@@ -381,13 +382,14 @@ void ApiConnection::disconnect()
     }
 }
 
-ApiConnection::ApiConnection(
-    boost::asio::io_service::strand& _strand, int id, bool readonly, string password)
+ApiConnection::ApiConnection(boost::asio::io_service::strand& _strand, int id, bool readonly,
+    string password, bool loopbackOnly)
   : m_sessionId(id),
     m_socket(g_io_service),
     m_io_strand(_strand),
     m_readonly(readonly),
-    m_password(std::move(password))
+    m_password(std::move(password)),
+    m_loopbackOnly(loopbackOnly)
 {
     m_jSwBuilder.settings_["indentation"] = "";
     if (!m_password.empty())
@@ -807,7 +809,10 @@ void ApiConnection::onRecvSocketDataCompleted(
         std::size_t linedelimiteroffset;
 
         if (m_message.size() < 4)
-            return;  // Wait for other data to come in
+        {
+            recvSocketData();  // Wait for other data to come in
+            return;
+        }
 
         if (hashwarp::api::looksLikeHttp(m_message))
         {
@@ -1046,6 +1051,21 @@ Json::Value ApiConnection::getMinerStatDetailPerMiner(
     return jRes;
 }
 
+bool ApiConnection::isLoopbackHost(const std::string& _host)
+{
+    // host[:port] or [v6]:port
+    std::string name = _host;
+    if (!name.empty() && name[0] == '[')
+        name = name.substr(1, name.find(']') - 1);
+    else if (name.find(':') != std::string::npos)
+        name = name.substr(0, name.rfind(':'));
+    if (boost::iequals(name, "localhost"))
+        return true;
+    boost::system::error_code ec;
+    auto addr = boost::asio::ip::address::from_string(name, ec);
+    return !ec && addr.is_loopback();
+}
+
 bool ApiConnection::httpAuthorized(const hashwarp::api::HttpRequest& _request)
 {
     if (m_password.empty())
@@ -1065,6 +1085,19 @@ std::string ApiConnection::handleHttp(const hashwarp::api::HttpRequest& _request
     {
         const std::string& path = _request.path;
         bool get = _request.method == "GET";
+
+        // Web pages in the user's browser must not reach the API: reject other origins
+        // and, when only listening on loopback, names other than localhost (DNS rebinding)
+        auto header = [&](const char* _name) {
+            auto it = _request.headers.find(_name);
+            return it == _request.headers.end() ? std::string() : it->second;
+        };
+        std::string host = header("host");
+        std::string origin = header("origin");
+        if (!origin.empty() && origin != "http://" + host)
+            return httpResponse(403, "text/plain", "Cross origin requests are not allowed\n");
+        if (m_loopbackOnly && !host.empty() && !isLoopbackHost(host))
+            return httpResponse(403, "text/plain", "Use 127.0.0.1 or localhost\n");
 
         if (path == "/" || path == "/index.html")
             return get ? httpResponse(200, "text/html; charset=utf-8", c_dashboardHtml) :
@@ -1095,6 +1128,9 @@ std::string ApiConnection::handleHttp(const hashwarp::api::HttpRequest& _request
                     "Control is not allowed: start hashwarp with --api-allow-control\n");
             if (!httpAuthorized(_request))
                 return unauthorized;
+            // A JSON content type can't be sent cross site without a CORS preflight
+            if (header("content-type").compare(0, 16, "application/json") != 0)
+                return httpResponse(400, "text/plain", "Use Content-Type: application/json\n");
             Json::Value body;
             Json::CharReaderBuilder builder;
             std::string errors;

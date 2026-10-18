@@ -24,7 +24,8 @@ class ApiConnection
 {
 public:
 
-    ApiConnection(boost::asio::io_service::strand& _strand, int id, bool readonly, string password);
+    ApiConnection(boost::asio::io_service::strand& _strand, int id, bool readonly, string password,
+        bool loopbackOnly);
 
     ~ApiConnection() = default;
 
@@ -57,6 +58,7 @@ private:
     // HTTP API (dashboard, /api/v1/summary, /metrics, /api/v1/control)
     std::string handleHttp(const hashwarp::api::HttpRequest& _request);
     bool httpAuthorized(const hashwarp::api::HttpRequest& _request);
+    static bool isLoopbackHost(const std::string& _host);
     Json::Value getSummary();
     std::string control(const Json::Value& _body);  // Error message, empty on success
 
@@ -76,6 +78,7 @@ private:
     std::string m_password = "";
 
     bool m_is_authenticated = true;
+    bool m_loopbackOnly = false;  // Listening on a loopback address only
 };
 
 
