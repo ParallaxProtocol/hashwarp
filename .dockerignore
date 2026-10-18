@@ -1,0 +1,4 @@
+# Build trees and editor files are not needed to build the image
+build*/
+compile_commands.json
+.vscode/

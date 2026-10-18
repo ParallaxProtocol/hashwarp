@@ -35,7 +35,11 @@ if(APICORE)
 endif()
 
 include(GNUInstallDirs)
-install(TARGETS hashwarp DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS hashwarp DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT runtime)
 if(MSVC)
-  install(FILES $<TARGET_PDB_FILE:hashwarp> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
+  install(FILES $<TARGET_PDB_FILE:hashwarp> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL
+    COMPONENT runtime)
 endif()
+
+# Release archive (see CPack in the top level CMakeLists.txt)
+install(TARGETS hashwarp DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)

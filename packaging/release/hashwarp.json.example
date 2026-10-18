@@ -1,0 +1,23 @@
+// Hashwarp configuration. Copy to hashwarp.json next to the executable and
+// run hashwarp without arguments. Keys are the command line options without
+// the leading dashes: run "hashwarp --help" for all of them. Options given on
+// the command line override the ones in this file.
+{
+    // Pools in failover order: host:port, or URLs such as
+    // stratum+ssl://host:port (TLS) or http://127.0.0.1:8545 (solo, getwork)
+    "pool": ["pool.example.com:3333"],
+
+    // Your Parallax address and a name for this rig
+    "wallet": "0x0000000000000000000000000000000000000000",
+    "worker": "rig1",
+
+    // Pause a GPU at 85C and resume it at 70C (lists hold one value per GPU)
+    "temp-stop": [85],
+    "temp-resume": [70],
+
+    // Log to a file as well (rotated at 20 MB)
+    "log-file": "hashwarp.log",
+
+    // Dashboard and JSON API on http://127.0.0.1:21550
+    "api-bind": "127.0.0.1:21550"
+}

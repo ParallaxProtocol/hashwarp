@@ -40,7 +40,7 @@ for:
       git submodule update --init --recursive
 
       sudo apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30
-      sudo apt install -y build-essential gcc g++ make wget pkg-config gcc-12 g++-12
+      sudo apt install -y build-essential gcc g++ make wget pkg-config gcc-12 g++-12 mesa-common-dev
 
       wget https://developer.download.nvidia.com/compute/cuda/12.9.1/local_installers/cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
       sudo dpkg -i cuda-repo-ubuntu2204-12-9-local_12.9.1-575.57.08-1_amd64.deb
@@ -69,6 +69,7 @@ for:
       cmake --build build --config Release -j"$(nproc)"
       ctest --test-dir build --output-on-failure
       cmake --build build --config Release --target package -j"$(nproc)"
+      cmake --build build --config Release --target rig-packages
 
   # --------- WINDOWS JOB ----------
   - matrix:
@@ -112,3 +113,5 @@ artifacts:
     name: hashwarp
   - path: build/hashwarp-*.tar.gz
     name: hashwarp
+  - path: build/hashwarp-*-mmpos.tgz
+    name: hashwarp-mmpos

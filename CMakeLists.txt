@@ -149,6 +149,31 @@ else()
   set(CPACK_GENERATOR TGZ)
   set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-v${PROJECT_VERSION}")
 endif()
+# The archive holds one directory with the executable, the documentation, a
+# sample configuration and start scripts
+install(FILES README.md LICENSE packaging/release/hashwarp.json.example
+  DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
+if(WIN32)
+  install(FILES packaging/release/start.bat packaging/release/start-solo.bat
+    scripts/fix-opencl-icd.vbs DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
+  install(FILES scripts/README.txt RENAME fix-opencl-icd.txt
+    DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
+else()
+  install(PROGRAMS packaging/release/start.sh packaging/release/start-solo.sh
+    DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
+endif()
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_ALL release)
+set(CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY ON)
+set(CPACK_ARCHIVE_RELEASE_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}")
 set(CPACK_PACKAGE_CHECKSUM SHA256)
-set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY FALSE)
 include(CPack)
+
+# HiveOS and mmpOS packages (Linux): cmake --build build --target rig-packages
+if(UNIX AND NOT APPLE)
+  add_custom_target(rig-packages
+    COMMAND ${CMAKE_SOURCE_DIR}/packaging/make-rig-packages.sh $<TARGET_FILE:hashwarp>
+      ${PROJECT_VERSION} ${CMAKE_BINARY_DIR}
+    DEPENDS hashwarp
+    COMMENT "Building the HiveOS and mmpOS packages")
+endif()
