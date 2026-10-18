@@ -819,7 +819,8 @@ void Farm::collectData(const boost::system::error_code& ec)
     double hashes = 0;
     for (const auto& s : m_acceptedHashes)
         hashes += s.value;
-    m_telemetry.effectiveHashrate = window > 0 ? hashes / window : 0;
+    // Meaningless (a couple of lucky shares) until enough time passed
+    m_telemetry.effectiveHashrate = window >= 120 ? hashes / window : 0;
 
     // Resubmit timer for another loop
     m_collectTimer.expires_from_now(boost::posix_time::milliseconds(m_collectInterval));

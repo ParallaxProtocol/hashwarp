@@ -83,6 +83,7 @@ struct Options
     bool logStdout = false;
     unsigned displayInterval = 10;  // s
     unsigned statsInterval = 60;    // s, 0 = off
+    bool noHotkeys = false;
 
     // API
     std::string apiBind;  // address:port

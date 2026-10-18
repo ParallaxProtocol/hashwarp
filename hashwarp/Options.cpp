@@ -419,6 +419,8 @@ void registerOptions(CLI::App& _app, Options& _o)
             "Seconds between hashrate lines")
         ->check(CLI::Range(1, 1800))
         ->group(c_groupLogging);
+    _app.add_flag("--no-hotkeys", _o.noHotkeys, "Don't read keys from the terminal (h for help)")
+        ->group(c_groupLogging);
     _app.add_option("--stats-interval", _o.statsInterval,
             "Seconds between per GPU statistics tables (0 = never)")
         ->check(CLI::Range(0, 86400))

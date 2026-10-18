@@ -42,6 +42,7 @@
 #endif
 
 #include "Console.h"
+#include "Hotkeys.h"
 #include "Options.h"
 #include "Wizard.h"
 
@@ -156,6 +157,78 @@ public:
             gpus.push_back({miner->getDescriptor().name, miner->pausedString()});
         for (const auto& line : hashwarp::statsTable(Farm::f().Telemetry(), gpus, poolStatus()))
             minelog << line;
+    }
+
+    // Runs on the io_service thread (like the telemetry it reads)
+    static void handleKey(char _key)
+    {
+        _key = (char)std::tolower((unsigned char)_key);
+        if (_key >= '0' && _key <= '9')
+        {
+            unsigned idx = unsigned(_key - '0');
+            auto miner = Farm::f().getMiner(idx);
+            if (!miner)
+            {
+                cnote << "There is no GPU " << idx;
+                return;
+            }
+            if (miner->pauseTest(MinerPauseEnum::PauseDueToAPIRequest))
+            {
+                miner->resume(MinerPauseEnum::PauseDueToAPIRequest);
+                cnote << "GPU " << idx << " resumed";
+            }
+            else
+            {
+                miner->pause(MinerPauseEnum::PauseDueToAPIRequest);
+                cnote << "GPU " << idx << " paused (press " << idx << " again to resume)";
+            }
+            return;
+        }
+
+        switch (_key)
+        {
+        case 'h':
+            cnote << "Keys: " EthWhite "h" EthReset " help, " EthWhite "s" EthReset
+                     " statistics, " EthWhite "p" EthReset " pause all, " EthWhite "r" EthReset
+                     " resume all, " EthWhite "0-9" EthReset " pause/resume a GPU, " EthWhite
+                     "c" EthReset " connection, " EthWhite "l" EthReset " debug log, " EthWhite
+                     "q" EthReset " quit";
+            break;
+        case 's':
+            printStats();
+            break;
+        case 'p':
+            for (auto const& miner : Farm::f().getMiners())
+                miner->pause(MinerPauseEnum::PauseDueToAPIRequest);
+            cnote << "All GPUs paused (press r to resume)";
+            break;
+        case 'r':
+            for (auto const& miner : Farm::f().getMiners())
+                miner->resume(MinerPauseEnum::PauseDueToAPIRequest);
+            cnote << "All GPUs resumed";
+            break;
+        case 'c':
+        {
+            hashwarp::PoolStatus pool = poolStatus();
+            auto conn = PoolManager::p().getActiveConnection();
+            cnote << (pool.connected ? "Connected to " : "Not connected to ") << pool.host
+                  << (conn ? " (" + conn->Scheme() + ", user " + conn->UserDotWorker() + ")" : "")
+                  << ", difficulty " << getFormattedHashes(pool.difficulty) << ", epoch "
+                  << pool.epoch << (pool.block >= 0 ? ", block " + to_string(pool.block) : "")
+                  << ", " << PoolManager::p().getConnectionSwitches() << " pool switches";
+            break;
+        }
+        case 'l':
+            g_logLevel = g_logLevel >= LogLevel::Debug ? LogLevel::Info : LogLevel::Debug;
+            cnote << "Log level " << logLevelName(g_logLevel);
+            break;
+        case 'q':
+            cnote << "Quitting ...";
+            raise(SIGINT);
+            break;
+        default:
+            break;
+        }
     }
 
     void cliDisplayInterval_elapsed(const boost::system::error_code& ec)
@@ -639,10 +712,21 @@ private:
         m_cliDisplayTimer.async_wait(m_io_strand.wrap(boost::bind(
             &MinerCLI::cliDisplayInterval_elapsed, this, boost::asio::placeholders::error)));
 
+        // Interactive keys
+        std::unique_ptr<hashwarp::Hotkeys> hotkeys;
+        if (!m_opts.noHotkeys)
+        {
+            hotkeys.reset(new hashwarp::Hotkeys(
+                [](char _key) { g_io_service.post([_key]() { handleKey(_key); }); }));
+            if (hotkeys->active())
+                cnote << "Press " EthWhite "h" EthReset " for the keys";
+        }
+
         // Stay in non-busy wait till signals arrive
         unique_lock<mutex> clilock(m_climtx);
         while (g_running)
             g_shouldstop.wait(clilock);
+        hotkeys.reset();
 
 #if API_CORE
 
