@@ -3,6 +3,7 @@ set(SOURCES
     wrapnvml.h wrapnvml.cpp
     wrapadl.h wrapadl.cpp
     wrapamdsysfs.h wrapamdsysfs.cpp
+    GpuControl.h GpuControl.cpp
 )
 
 add_library(hwmon ${SOURCES})

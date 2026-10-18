@@ -53,5 +53,34 @@ int wrap_amdsysfs_get_clocks(
 int wrap_amdsysfs_get_power_limit(
     wrap_amdsysfs_handle* sysfsh, int index, unsigned int* milliwatts);
 
+/*
+ * Overclocking (needs root). These return 0 on success, otherwise an errno
+ * value (or -1 for an invalid index or a file that can't be parsed)
+ */
+
+/* Overdrive state of pp_od_clk_voltage: highest core and memory states and their ranges */
+struct wrap_amdsysfs_od
+{
+    unsigned int coreMHz = 0, memMHz = 0;  /* current top state clocks */
+    unsigned int coreMinMHz = 0, coreMaxMHz = 0, memMinMHz = 0, memMaxMHz = 0;  /* OD_RANGE */
+};
+
+/* ENOENT when overdrive is off (amdgpu.ppfeaturemask) or the GPU has no such table */
+int wrap_amdsysfs_get_od(wrap_amdsysfs_handle* sysfsh, int index, wrap_amdsysfs_od* od);
+
+/* Sets the clock of the highest core (mem = 0) or memory (mem = 1) state and commits it */
+int wrap_amdsysfs_set_od_clock(wrap_amdsysfs_handle* sysfsh, int index, int mem, unsigned int mhz);
+
+/* Back to the default clocks */
+int wrap_amdsysfs_reset_od(wrap_amdsysfs_handle* sysfsh, int index);
+
+/* Power cap in milliwatts: current, allowed range and default (0 when not reported) */
+int wrap_amdsysfs_get_power_caps(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* currentMw,
+    unsigned int* minMw, unsigned int* maxMw, unsigned int* defaultMw);
+int wrap_amdsysfs_set_power_cap(wrap_amdsysfs_handle* sysfsh, int index, unsigned int milliwatts);
+
+/* Fan speed in percent, or back to automatic control when pct > 100 */
+int wrap_amdsysfs_set_fan(wrap_amdsysfs_handle* sysfsh, int index, unsigned int pct);
+
 /* Root of /sys (HASHWARP_SYSFS_ROOT environment variable, for tests) */
 std::string wrap_amdsysfs_root();

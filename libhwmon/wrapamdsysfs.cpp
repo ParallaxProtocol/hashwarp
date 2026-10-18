@@ -9,7 +9,10 @@
 #include <sys/types.h>
 #if defined(__linux)
 #include <dirent.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
+#include <cerrno>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/filesystem.hpp>
@@ -370,4 +373,177 @@ int wrap_amdsysfs_get_power_limit(wrap_amdsysfs_handle* sysfsh, int index, unsig
         return -1;
     *milliwatts = micro / 1000;
     return 0;
+}
+
+namespace
+{
+std::string deviceFile(wrap_amdsysfs_handle* sysfsh, int index, const char* file)
+{
+    return wrap_amdsysfs_root() + "/sys/class/drm/card" +
+           std::to_string(sysfsh->sysfs_device_id[index]) + "/device/" + file;
+}
+
+// Writes _value like `echo _value > _path`: 0 or the errno of the write
+int writeFile(const std::string& _path, const std::string& _value, bool _append = false)
+{
+#if defined(__linux)
+    int fd = open(_path.c_str(), O_WRONLY | (_append ? O_APPEND : O_TRUNC));
+    if (fd < 0)
+        return errno;
+    std::string line = _value + "\n";
+    ssize_t n = write(fd, line.data(), line.size());
+    int err = n == (ssize_t)line.size() ? 0 : (n < 0 ? errno : EIO);
+    if (close(fd) != 0 && !err)
+        err = errno;
+    return err;
+#else
+    (void)_path;
+    (void)_value;
+    (void)_append;
+    return ENOSYS;
+#endif
+}
+
+// The commands go to pp_od_clk_voltage one by one (appended: the fake trees of the tests
+// keep them)
+int writeOd(wrap_amdsysfs_handle* sysfsh, int index, const std::string& _command)
+{
+    return writeFile(deviceFile(sysfsh, index, "pp_od_clk_voltage"), _command, true);
+}
+
+// Highest state of an OD_SCLK or OD_MCLK section: index, MHz and, on GPUs that take
+// a voltage with the clock (Polaris, Vega), mV
+struct OdState
+{
+    int index = -1;
+    unsigned int mhz = 0;
+    unsigned int mv = 0;
+};
+
+struct OdTable
+{
+    OdState core, mem;
+    unsigned int coreMin = 0, coreMax = 0, memMin = 0, memMax = 0;
+};
+
+bool readOd(wrap_amdsysfs_handle* sysfsh, int index, OdTable& _table)
+{
+    std::ifstream ifs(deviceFile(sysfsh, index, "pp_od_clk_voltage"));
+    if (!ifs)
+        return false;
+    static const std::regex state(R"(^\s*(\d+):\s*(\d+)\s*[Mm][Hh]z(?:\s+(\d+)\s*mV)?)");
+    static const std::regex range(R"(^\s*(SCLK|MCLK):\s*(\d+)\s*[Mm][Hh]z\s+(\d+)\s*[Mm][Hh]z)");
+    std::string section, line;
+    bool any = false;
+    while (std::getline(ifs, line))
+    {
+        std::smatch m;
+        if (line.compare(0, 3, "OD_") == 0)
+        {
+            section = line.substr(0, line.find(':'));
+            continue;
+        }
+        if ((section == "OD_SCLK" || section == "OD_MCLK") && std::regex_search(line, m, state))
+        {
+            OdState& s = section == "OD_SCLK" ? _table.core : _table.mem;
+            int i = std::stoi(m.str(1));
+            if (i >= s.index)
+            {
+                s.index = i;
+                s.mhz = (unsigned int)std::stoul(m.str(2));
+                s.mv = m[3].matched ? (unsigned int)std::stoul(m.str(3)) : 0;
+                any = true;
+            }
+        }
+        else if (section == "OD_RANGE" && std::regex_search(line, m, range))
+        {
+            bool core = m.str(1) == "SCLK";
+            (core ? _table.coreMin : _table.memMin) = (unsigned int)std::stoul(m.str(2));
+            (core ? _table.coreMax : _table.memMax) = (unsigned int)std::stoul(m.str(3));
+        }
+    }
+    return any;
+}
+}  // namespace
+
+int wrap_amdsysfs_get_od(wrap_amdsysfs_handle* sysfsh, int index, wrap_amdsysfs_od* od)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    OdTable t;
+    if (!readOd(sysfsh, index, t))
+        return ENOENT;
+    od->coreMHz = t.core.mhz;
+    od->memMHz = t.mem.mhz;
+    od->coreMinMHz = t.coreMin;
+    od->coreMaxMHz = t.coreMax;
+    od->memMinMHz = t.memMin;
+    od->memMaxMHz = t.memMax;
+    return 0;
+}
+
+int wrap_amdsysfs_set_od_clock(wrap_amdsysfs_handle* sysfsh, int index, int mem, unsigned int mhz)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    OdTable t;
+    if (!readOd(sysfsh, index, t))
+        return ENOENT;
+    const OdState& s = mem ? t.mem : t.core;
+    if (s.index < 0)
+        return ENOENT;
+    std::string cmd = std::string(mem ? "m " : "s ") + std::to_string(s.index) + " " +
+                      std::to_string(mhz) + (s.mv ? " " + std::to_string(s.mv) : "");
+    int err = writeOd(sysfsh, index, cmd);
+    return err ? err : writeOd(sysfsh, index, "c");
+}
+
+int wrap_amdsysfs_reset_od(wrap_amdsysfs_handle* sysfsh, int index)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    int err = writeOd(sysfsh, index, "r");
+    return err ? err : writeOd(sysfsh, index, "c");
+}
+
+int wrap_amdsysfs_get_power_caps(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* currentMw,
+    unsigned int* minMw, unsigned int* maxMw, unsigned int* defaultMw)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    unsigned int cap = 0, lo = 0, hi = 0, def = 0;
+    if (!readHwmon(sysfsh, index, "power1_cap", cap) || !cap)
+        return ENOENT;
+    readHwmon(sysfsh, index, "power1_cap_min", lo);
+    readHwmon(sysfsh, index, "power1_cap_max", hi);
+    readHwmon(sysfsh, index, "power1_cap_default", def);
+    *currentMw = cap / 1000;
+    *minMw = lo / 1000;
+    *maxMw = hi / 1000;
+    *defaultMw = def / 1000;
+    return 0;
+}
+
+int wrap_amdsysfs_set_power_cap(wrap_amdsysfs_handle* sysfsh, int index, unsigned int milliwatts)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    return writeFile(hwmonFile(sysfsh, index, "power1_cap"), std::to_string(milliwatts * 1000ull));
+}
+
+int wrap_amdsysfs_set_fan(wrap_amdsysfs_handle* sysfsh, int index, unsigned int pct)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    // pwm1_enable: 1 manual, 2 automatic
+    if (pct > 100)
+        return writeFile(hwmonFile(sysfsh, index, "pwm1_enable"), "2");
+    unsigned int pwmMax = 255, pwmMin = 0;
+    readHwmon(sysfsh, index, "pwm1_max", pwmMax);
+    readHwmon(sysfsh, index, "pwm1_min", pwmMin);
+    int err = writeFile(hwmonFile(sysfsh, index, "pwm1_enable"), "1");
+    if (err)
+        return err;
+    unsigned int pwm = pwmMin + (unsigned int)((pwmMax - pwmMin) * pct / 100.0 + 0.5);
+    return writeFile(hwmonFile(sysfsh, index, "pwm1"), std::to_string(pwm));
 }

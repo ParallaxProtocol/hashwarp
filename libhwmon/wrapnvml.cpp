@@ -53,14 +53,20 @@ wrap_nvml_handle* wrap_nvml_create()
     return nullptr;
 #endif
 
+    /* HASHWARP_NVML_LIB: another NVML library (the tests use a fake one) */
+    const char* lib = getenv("HASHWARP_NVML_LIB");
 #ifdef _WIN32
-    char tmp[512];
-    ExpandEnvironmentStringsA(libnvidia_ml, tmp, sizeof(tmp));
+    /* Current drivers install nvml.dll in System32, older ones in NVSMI */
+    void* nvml_dll = wrap_dlopen(lib ? lib : "nvml.dll");
+    if (nvml_dll == nullptr && !lib)
+    {
+        char tmp[512];
+        ExpandEnvironmentStringsA(libnvidia_ml, tmp, sizeof(tmp));
+        nvml_dll = wrap_dlopen(tmp);
+    }
 #else
-    char tmp[512] = libnvidia_ml;
+    void* nvml_dll = wrap_dlopen(lib ? lib : libnvidia_ml);
 #endif
-
-    void* nvml_dll = wrap_dlopen(tmp);
     if (nvml_dll == nullptr)
     {
         cwarn << "Failed to obtain all required NVML function pointers";
@@ -95,6 +101,29 @@ wrap_nvml_handle* wrap_nvml_create()
         unsigned int*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetEnforcedPowerLimit");
     nvmlh->nvmlDeviceGetFieldValues = (wrap_nvmlReturn_t(*)(wrap_nvmlDevice_t, int,
         wrap_nvmlFieldValue_t*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetFieldValues");
+
+#define WRAPNVML_SYM(name) *(void**)&nvmlh->name = wrap_dlsym(nvmlh->nvml_dll, #name)
+    WRAPNVML_SYM(nvmlErrorString);
+    WRAPNVML_SYM(nvmlDeviceGetUUID);
+    WRAPNVML_SYM(nvmlDeviceGetMaxClockInfo);
+    WRAPNVML_SYM(nvmlDeviceGetPowerManagementLimit);
+    WRAPNVML_SYM(nvmlDeviceGetPowerManagementLimitConstraints);
+    WRAPNVML_SYM(nvmlDeviceGetPowerManagementDefaultLimit);
+    WRAPNVML_SYM(nvmlDeviceSetPowerManagementLimit);
+    WRAPNVML_SYM(nvmlDeviceSetGpuLockedClocks);
+    WRAPNVML_SYM(nvmlDeviceResetGpuLockedClocks);
+    WRAPNVML_SYM(nvmlDeviceGetClockOffsets);
+    WRAPNVML_SYM(nvmlDeviceSetClockOffsets);
+    WRAPNVML_SYM(nvmlDeviceGetGpcClkVfOffset);
+    WRAPNVML_SYM(nvmlDeviceSetGpcClkVfOffset);
+    WRAPNVML_SYM(nvmlDeviceGetMemClkVfOffset);
+    WRAPNVML_SYM(nvmlDeviceSetMemClkVfOffset);
+    WRAPNVML_SYM(nvmlDeviceGetGpcClkMinMaxVfOffset);
+    WRAPNVML_SYM(nvmlDeviceGetMemClkMinMaxVfOffset);
+    WRAPNVML_SYM(nvmlDeviceGetNumFans);
+    WRAPNVML_SYM(nvmlDeviceSetFanSpeed_v2);
+    WRAPNVML_SYM(nvmlDeviceSetDefaultFanSpeed_v2);
+#undef WRAPNVML_SYM
 
     if (nvmlh->nvmlInit == nullptr || nvmlh->nvmlShutdown == nullptr ||
         nvmlh->nvmlDeviceGetCount == nullptr || nvmlh->nvmlDeviceGetHandleByIndex == nullptr ||
@@ -257,6 +286,157 @@ int wrap_nvml_get_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned in
         return -1;
     return 0;
 }
+
+/* nvmlClockOffset_v1_t (r555 drivers and newer) */
+typedef struct
+{
+    unsigned int version;
+    int type;   /* nvmlClockType_t */
+    int pstate; /* nvmlPstates_t */
+    int clockOffsetMHz;
+    int minClockOffsetMHz;
+    int maxClockOffsetMHz;
+} wrap_nvmlClockOffset_t;
+
+static void init_clock_offset(wrap_nvmlClockOffset_t* info, int mem)
+{
+    memset(info, 0, sizeof(*info));
+    info->version = (unsigned int)sizeof(*info) | (1u << 24); /* nvmlClockOffset_v1 */
+    info->type = mem ? 2 /* NVML_CLOCK_MEM */ : 0 /* NVML_CLOCK_GRAPHICS */;
+    info->pstate = 0; /* NVML_PSTATE_0 */
+}
+
+#define WRAPNVML_CHECK(fn)                                      \
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount)       \
+        return -1;                                              \
+    if (!nvmlh->fn)                                             \
+        return WRAPNVML_NOT_FOUND;
+
+const char* wrap_nvml_error(wrap_nvml_handle* nvmlh, int code)
+{
+    if (code == WRAPNVML_NOT_FOUND)
+        return "not supported by this driver";
+    if (code == WRAPNVML_NO_PERMISSION)
+#if defined(_WIN32)
+        return "needs administrator rights";
+#else
+        return "needs root (run hashwarp with sudo)";
+#endif
+    if (code < 0 || !nvmlh->nvmlErrorString)
+        return "unknown error";
+    return nvmlh->nvmlErrorString(code);
+}
+
+int wrap_nvml_get_uuid(wrap_nvml_handle* nvmlh, int gpuindex, char* buf, int bufsize)
+{
+    WRAPNVML_CHECK(nvmlDeviceGetUUID)
+    return nvmlh->nvmlDeviceGetUUID(nvmlh->devs[gpuindex], buf, (unsigned int)bufsize);
+}
+
+int wrap_nvml_get_power_limits(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* currentMw,
+    unsigned int* minMw, unsigned int* maxMw, unsigned int* defaultMw)
+{
+    WRAPNVML_CHECK(nvmlDeviceGetPowerManagementLimit)
+    if (!nvmlh->nvmlDeviceGetPowerManagementLimitConstraints ||
+        !nvmlh->nvmlDeviceGetPowerManagementDefaultLimit)
+        return WRAPNVML_NOT_FOUND;
+    wrap_nvmlDevice_t dev = nvmlh->devs[gpuindex];
+    int r = nvmlh->nvmlDeviceGetPowerManagementLimit(dev, currentMw);
+    if (r == 0)
+        r = nvmlh->nvmlDeviceGetPowerManagementLimitConstraints(dev, minMw, maxMw);
+    if (r == 0)
+        r = nvmlh->nvmlDeviceGetPowerManagementDefaultLimit(dev, defaultMw);
+    return r;
+}
+
+int wrap_nvml_set_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int milliwatts)
+{
+    WRAPNVML_CHECK(nvmlDeviceSetPowerManagementLimit)
+    return nvmlh->nvmlDeviceSetPowerManagementLimit(nvmlh->devs[gpuindex], milliwatts);
+}
+
+int wrap_nvml_get_max_clock(wrap_nvml_handle* nvmlh, int gpuindex, int mem, unsigned int* mhz)
+{
+    WRAPNVML_CHECK(nvmlDeviceGetMaxClockInfo)
+    return nvmlh->nvmlDeviceGetMaxClockInfo(nvmlh->devs[gpuindex], mem ? 2 : 0, mhz);
+}
+
+int wrap_nvml_lock_core_clock(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int mhz)
+{
+    WRAPNVML_CHECK(nvmlDeviceSetGpuLockedClocks)
+    if (!mhz)
+        return nvmlh->nvmlDeviceResetGpuLockedClocks ?
+                   nvmlh->nvmlDeviceResetGpuLockedClocks(nvmlh->devs[gpuindex]) :
+                   WRAPNVML_NOT_FOUND;
+    return nvmlh->nvmlDeviceSetGpuLockedClocks(nvmlh->devs[gpuindex], mhz, mhz);
+}
+
+int wrap_nvml_get_clock_offset(
+    wrap_nvml_handle* nvmlh, int gpuindex, int mem, int* offset, int* minOffset, int* maxOffset)
+{
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount)
+        return -1;
+    wrap_nvmlDevice_t dev = nvmlh->devs[gpuindex];
+    if (nvmlh->nvmlDeviceGetClockOffsets)
+    {
+        wrap_nvmlClockOffset_t info;
+        init_clock_offset(&info, mem);
+        int r = nvmlh->nvmlDeviceGetClockOffsets(dev, &info);
+        if (r == 0)
+        {
+            *offset = info.clockOffsetMHz;
+            *minOffset = info.minClockOffsetMHz;
+            *maxOffset = info.maxClockOffsetMHz;
+            return 0;
+        }
+        if (r != 3 /* NVML_ERROR_NOT_SUPPORTED */)
+            return r;
+    }
+    /* Older drivers (r470 to r550) */
+    wrap_nvmlReturn_t (*get)(wrap_nvmlDevice_t, int*) =
+        mem ? nvmlh->nvmlDeviceGetMemClkVfOffset : nvmlh->nvmlDeviceGetGpcClkVfOffset;
+    wrap_nvmlReturn_t (*range)(wrap_nvmlDevice_t, int*, int*) =
+        mem ? nvmlh->nvmlDeviceGetMemClkMinMaxVfOffset : nvmlh->nvmlDeviceGetGpcClkMinMaxVfOffset;
+    if (!get || !range)
+        return WRAPNVML_NOT_FOUND;
+    int r = get(dev, offset);
+    return r ? r : range(dev, minOffset, maxOffset);
+}
+
+int wrap_nvml_set_clock_offset(wrap_nvml_handle* nvmlh, int gpuindex, int mem, int offset)
+{
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount)
+        return -1;
+    wrap_nvmlDevice_t dev = nvmlh->devs[gpuindex];
+    if (nvmlh->nvmlDeviceSetClockOffsets)
+    {
+        wrap_nvmlClockOffset_t info;
+        init_clock_offset(&info, mem);
+        info.clockOffsetMHz = offset;
+        int r = nvmlh->nvmlDeviceSetClockOffsets(dev, &info);
+        if (r != 3 /* NVML_ERROR_NOT_SUPPORTED */)
+            return r;
+    }
+    wrap_nvmlReturn_t (*set)(wrap_nvmlDevice_t, int) =
+        mem ? nvmlh->nvmlDeviceSetMemClkVfOffset : nvmlh->nvmlDeviceSetGpcClkVfOffset;
+    return set ? set(dev, offset) : WRAPNVML_NOT_FOUND;
+}
+
+int wrap_nvml_set_fans(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int pct)
+{
+    WRAPNVML_CHECK(nvmlDeviceGetNumFans)
+    if (!nvmlh->nvmlDeviceSetFanSpeed_v2 || !nvmlh->nvmlDeviceSetDefaultFanSpeed_v2)
+        return WRAPNVML_NOT_FOUND;
+    wrap_nvmlDevice_t dev = nvmlh->devs[gpuindex];
+    unsigned int fans = 0;
+    int r = nvmlh->nvmlDeviceGetNumFans(dev, &fans);
+    for (unsigned int fan = 0; r == 0 && fan < fans; fan++)
+        r = pct > 100 ? nvmlh->nvmlDeviceSetDefaultFanSpeed_v2(dev, fan) :
+                        nvmlh->nvmlDeviceSetFanSpeed_v2(dev, fan, pct);
+    return r;
+}
+
+#undef WRAPNVML_CHECK
 
 #if defined(__cplusplus)
 }

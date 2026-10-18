@@ -91,6 +91,28 @@ typedef struct
     wrap_nvmlReturn_t (*nvmlDeviceGetClockInfo)(wrap_nvmlDevice_t, int, unsigned int*);
     wrap_nvmlReturn_t (*nvmlDeviceGetEnforcedPowerLimit)(wrap_nvmlDevice_t, unsigned int*);
     wrap_nvmlReturn_t (*nvmlDeviceGetFieldValues)(wrap_nvmlDevice_t, int, wrap_nvmlFieldValue_t*);
+    /* Overclocking (optional too) */
+    const char* (*nvmlErrorString)(int);
+    wrap_nvmlReturn_t (*nvmlDeviceGetUUID)(wrap_nvmlDevice_t, char*, unsigned int);
+    wrap_nvmlReturn_t (*nvmlDeviceGetMaxClockInfo)(wrap_nvmlDevice_t, int, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetPowerManagementLimit)(wrap_nvmlDevice_t, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetPowerManagementLimitConstraints)(
+        wrap_nvmlDevice_t, unsigned int*, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetPowerManagementDefaultLimit)(wrap_nvmlDevice_t, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceSetPowerManagementLimit)(wrap_nvmlDevice_t, unsigned int);
+    wrap_nvmlReturn_t (*nvmlDeviceSetGpuLockedClocks)(wrap_nvmlDevice_t, unsigned int, unsigned int);
+    wrap_nvmlReturn_t (*nvmlDeviceResetGpuLockedClocks)(wrap_nvmlDevice_t);
+    wrap_nvmlReturn_t (*nvmlDeviceGetClockOffsets)(wrap_nvmlDevice_t, void*);
+    wrap_nvmlReturn_t (*nvmlDeviceSetClockOffsets)(wrap_nvmlDevice_t, void*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetGpcClkVfOffset)(wrap_nvmlDevice_t, int*);
+    wrap_nvmlReturn_t (*nvmlDeviceSetGpcClkVfOffset)(wrap_nvmlDevice_t, int);
+    wrap_nvmlReturn_t (*nvmlDeviceGetMemClkVfOffset)(wrap_nvmlDevice_t, int*);
+    wrap_nvmlReturn_t (*nvmlDeviceSetMemClkVfOffset)(wrap_nvmlDevice_t, int);
+    wrap_nvmlReturn_t (*nvmlDeviceGetGpcClkMinMaxVfOffset)(wrap_nvmlDevice_t, int*, int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetMemClkMinMaxVfOffset)(wrap_nvmlDevice_t, int*, int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetNumFans)(wrap_nvmlDevice_t, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceSetFanSpeed_v2)(wrap_nvmlDevice_t, unsigned int, unsigned int);
+    wrap_nvmlReturn_t (*nvmlDeviceSetDefaultFanSpeed_v2)(wrap_nvmlDevice_t, unsigned int);
 } wrap_nvml_handle;
 
 
@@ -136,6 +158,39 @@ int wrap_nvml_get_clocks(
 
 /* Enforced power limit */
 int wrap_nvml_get_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* milliwatts);
+
+/*
+ * Overclocking. These return 0 on success, otherwise the NVML error code
+ * (WRAPNVML_NOT_FOUND when the driver doesn't have the function). The setters
+ * need root (Linux) or administrator (Windows) rights
+ */
+#define WRAPNVML_NO_PERMISSION 4
+#define WRAPNVML_NOT_FOUND 13
+
+/* Description of an error code returned by the functions below */
+const char* wrap_nvml_error(wrap_nvml_handle* nvmlh, int code);
+
+int wrap_nvml_get_uuid(wrap_nvml_handle* nvmlh, int gpuindex, char* buf, int bufsize);
+
+/* Power limits in milliwatts: current, allowed range and default */
+int wrap_nvml_get_power_limits(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* currentMw,
+    unsigned int* minMw, unsigned int* maxMw, unsigned int* defaultMw);
+int wrap_nvml_set_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int milliwatts);
+
+/* Highest core (mem = 0) or memory (mem = 1) clock in MHz */
+int wrap_nvml_get_max_clock(wrap_nvml_handle* nvmlh, int gpuindex, int mem, unsigned int* mhz);
+
+/* Keeps the core clock at mhz, 0 lets it boost again */
+int wrap_nvml_lock_core_clock(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int mhz);
+
+/* Core (mem = 0) or memory (mem = 1) clock offset of the highest performance state, in
+   MHz. Memory offsets are in the units of nvidia-settings: twice MSI Afterburner's */
+int wrap_nvml_get_clock_offset(
+    wrap_nvml_handle* nvmlh, int gpuindex, int mem, int* offset, int* minOffset, int* maxOffset);
+int wrap_nvml_set_clock_offset(wrap_nvml_handle* nvmlh, int gpuindex, int mem, int offset);
+
+/* Speed of all the fans in percent, or back to automatic control when pct > 100 */
+int wrap_nvml_set_fans(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int pct);
 
 
 #if defined(__cplusplus)
