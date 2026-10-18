@@ -15,6 +15,7 @@
     along with ethminer.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <cmath>
 #include <cstdlib>
 
 #include "CommonData.h"
@@ -81,61 +82,20 @@ bool dev::setenv(const char name[], const char value[], bool override)
 
 std::string dev::getTargetFromDiff(double diff, HexPrefix _prefix)
 {
-    using namespace boost::multiprecision;
     using BigInteger = boost::multiprecision::cpp_int;
 
-    // Use full 256-bit max value (2^256 - 1) as base so target = floor((2^256 - 1) / difficulty).
-    // This matches Parallax XHash target calculation (see xhash spec).
-    static BigInteger base(
-        "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-    BigInteger product;
+    // Stratum difficulty is expressed in units of 2^32 hashes (difficulty 1 == 2^32 hashes),
+    // the same convention pools use (see miningcore-xhash EthereumJob). Parallax XHash defines
+    // target = floor((2^256 - 1) / hashes), so target = floor((2^256 - 1) / (diff * 2^32)).
+    // Integer arithmetic only: scale the double by 2^32 exactly and divide.
+    static const BigInteger maxTarget = (BigInteger(1) << 256) - 1;
 
-    if (diff == 0)
+    BigInteger product = maxTarget;
+    if (std::isfinite(diff) && diff > 0)
     {
-        product = BigInteger("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-    }
-    else
-    {
-        diff = 1 / diff;
-
-        BigInteger idiff(diff);
-        product = base * idiff;
-
-        std::string sdiff = boost::lexical_cast<std::string>(diff);
-        size_t ldiff = sdiff.length();
-        size_t offset = sdiff.find(".");
-
-        if (offset != std::string::npos)
-        {
-            // Number of decimal places
-            size_t precision = (ldiff - 1) - offset;
-
-            // Effective sequence of decimal places
-            string decimals = sdiff.substr(offset + 1);
-
-            // Strip leading zeroes. If a string begins with
-            // 0 or 0x boost parser considers it hex
-            decimals = decimals.erase(0, decimals.find_first_not_of('0'));
-
-            // Build up the divisor as string - just in case
-            // parser does some implicit conversion with 10^precision
-            string decimalDivisor = "1";
-            decimalDivisor.resize(precision + 1, '0');
-
-            // This is the multiplier for the decimal part
-            BigInteger multiplier(decimals);
-
-            // This is the divisor for the decimal part
-            BigInteger divisor(decimalDivisor);
-
-            BigInteger decimalproduct;
-            decimalproduct = base * multiplier;
-            decimalproduct /= divisor;
-
-            // Add the computed decimal part
-            // to product
-            product += decimalproduct;
-        }
+        BigInteger hashes(std::ldexp(diff, 32));  // truncates toward zero
+        if (hashes > 1)
+            product = maxTarget / hashes;
     }
 
     // Normalize to 64 chars hex with "0x" prefix
@@ -150,13 +110,14 @@ std::string dev::getTargetFromDiff(double diff, HexPrefix _prefix)
 
 double dev::getHashesToTarget(string _target)
 {
-    using namespace boost::multiprecision;
     using BigInteger = boost::multiprecision::cpp_int;
 
-    static BigInteger dividend(
-        "0xffff000000000000000000000000000000000000000000000000000000000000");
+    // Expected number of hashes to find a solution below _target: (2^256 - 1) / target
+    static const BigInteger maxTarget = (BigInteger(1) << 256) - 1;
     BigInteger divisor(_target);
-    return double(dividend / divisor);
+    if (divisor == 0)
+        return 0.0;
+    return (maxTarget / divisor).convert_to<double>();
 }
 
 std::string dev::getScaledSize(double _value, double _divisor, int _precision, string _sizes[],

@@ -229,10 +229,10 @@ inline unsigned bytesRequired(T _i)
 /// Portable wrapper for setenv / _putenv C library functions.
 bool setenv(const char name[], const char value[], bool override = false);
 
-/// Gets a target hash from given difficulty
+/// Gets a target hash from a stratum difficulty (difficulty 1 == 2^32 hashes)
 std::string getTargetFromDiff(double diff, HexPrefix _prefix = HexPrefix::Add);
 
-/// Gets the difficulty expressed in hashes to target
+/// Gets the expected number of hashes to find a solution below target
 double getHashesToTarget(std::string _target);
 
 /// Generic function to scale a value
