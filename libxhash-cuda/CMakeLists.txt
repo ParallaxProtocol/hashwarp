@@ -18,6 +18,8 @@ if(DEFINED CMAKE_CUDA_ARCHITECTURES AND NOT CMAKE_CUDA_ARCHITECTURES STREQUAL ""
   set(_xhash_user_archs TRUE)
 endif()
 
+# Link the CUDA runtime statically (the default for nvcc, made explicit)
+set(CMAKE_CUDA_RUNTIME_LIBRARY Static)
 project(xhash_cuda LANGUAGES CXX CUDA)
 
 find_package(CUDAToolkit REQUIRED)
@@ -93,7 +95,8 @@ target_link_libraries(xhash-cuda
     parallaxcore
     xhash::xhash
     Boost::thread
-    CUDA::cudart
+    # Static: hashwarp then only needs the NVIDIA driver, not the CUDA toolkit
+    CUDA::cudart_static
 )
 
 set_target_properties(xhash-cuda PROPERTIES POSITION_INDEPENDENT_CODE ON)

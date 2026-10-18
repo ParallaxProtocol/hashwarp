@@ -104,7 +104,9 @@ message("")
 
 include(EthCompilerSettings)
 if(UNIX AND NOT APPLE)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++")
+  # Only glibc stays dynamic: the GPU drivers (libcuda, NVML, OpenCL ICDs) are
+  # loaded with dlopen, which needs it
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
 endif()
 
 cable_add_buildinfo_library(PROJECT_NAME ${PROJECT_NAME})

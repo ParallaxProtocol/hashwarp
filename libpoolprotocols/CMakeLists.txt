@@ -8,6 +8,9 @@ set(SOURCES
 )
 
 hunter_add_package(OpenSSL)
+# Hunter's static OpenSSL, even where the system has its own: the executable
+# must not depend on the OpenSSL version installed
+set(OPENSSL_USE_STATIC_LIBS TRUE)
 find_package(OpenSSL REQUIRED)
 
 add_library(poolprotocols ${SOURCES})
