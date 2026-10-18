@@ -40,15 +40,16 @@ std::string OcSettings::str() const
             ss << ", ";
         return ss;
     };
-    auto offset = [](int _v) { return (_v > 0 ? "+" : "") + std::to_string(_v); };
+    auto offset = [](int _v) { return (_v >= 0 ? "+" : "") + std::to_string(_v) + " MHz"; };
+    auto clock = [](unsigned _v) { return _v ? std::to_string(_v) + " MHz" : "default"; };
     if (coreClock)
-        sep() << "core " << *coreClock << " MHz";
+        sep() << "core " << clock(*coreClock);
     if (coreOffset)
-        sep() << "core " << offset(*coreOffset) << " MHz";
+        sep() << "core " << offset(*coreOffset);
     if (memClock)
-        sep() << "mem " << *memClock << " MHz";
+        sep() << "mem " << clock(*memClock);
     if (memOffset)
-        sep() << "mem " << offset(*memOffset) << " MHz";
+        sep() << "mem " << offset(*memOffset);
     if (powerW)
         sep() << "power " << *powerW << " W";
     if (powerPct)
@@ -78,9 +79,9 @@ std::vector<std::string> GpuControl::apply(const OcSettings& _s)
                              std::to_string(m_limits.maxPowerW) + " W");
         else
         {
-            if (!m_origPower)
-                m_origPower = currentPower();
-            check(setPower(w), "the power limit");
+            auto orig = currentPower();
+            if (check(setPower(w), "the power limit") && !m_origPower)
+                m_origPower = orig;
         }
     }
     if (_s.coreClock)
@@ -90,9 +91,9 @@ std::vector<std::string> GpuControl::apply(const OcSettings& _s)
     }
     if (_s.coreOffset)
     {
-        if (!m_origCoreOffset)
-            m_origCoreOffset = currentCoreOffset();
-        check(setCoreOffset(*_s.coreOffset), "the core clock offset");
+        auto orig = currentCoreOffset();
+        if (check(setCoreOffset(*_s.coreOffset), "the core clock offset") && !m_origCoreOffset)
+            m_origCoreOffset = orig;
     }
     if (_s.memClock)
     {
@@ -101,9 +102,9 @@ std::vector<std::string> GpuControl::apply(const OcSettings& _s)
     }
     if (_s.memOffset)
     {
-        if (!m_origMemOffset)
-            m_origMemOffset = currentMemOffset();
-        check(setMemOffset(*_s.memOffset), "the memory clock offset");
+        auto orig = currentMemOffset();
+        if (check(setMemOffset(*_s.memOffset), "the memory clock offset") && !m_origMemOffset)
+            m_origMemOffset = orig;
     }
     if (_s.fanPct)
     {
