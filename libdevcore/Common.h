@@ -18,7 +18,9 @@ using byte = uint8_t;
 
 namespace dev
 {
-// Binary data types.
+// Binary data types. byte is also declared here so that templates in dev don't see
+// std::byte: MSVC looks names up when it instantiates them, after a using namespace std
+using ::byte;
 using bytes = std::vector<byte>;
 using bytesRef = vector_ref<byte>;
 using bytesConstRef = vector_ref<byte const>;
