@@ -83,17 +83,31 @@ void EthStratumClient::init_socket()
 
         SSL_CTX_set_cert_store(ctx.native_handle(), store);
 #else
-        char* certPath = getenv("SSL_CERT_FILE");
-        try
+        // OpenSSL is linked statically, its built in default paths point into the build
+        // machine: look for the distribution's CA bundle
+        const char* certPath = getenv("SSL_CERT_FILE");
+        const char* const bundles[] = {
+            "/etc/ssl/certs/ca-certificates.crt",  // Debian, Ubuntu, Arch, HiveOS
+            "/etc/pki/tls/certs/ca-bundle.crt",    // Fedora, RHEL
+            "/etc/ssl/ca-bundle.pem",              // openSUSE
+            "/etc/ssl/cert.pem",                   // Alpine
+        };
+        bool loaded = false;
+        for (const char* bundle : bundles)
         {
-            ctx.load_verify_file(certPath ? certPath : "/etc/ssl/certs/ca-certificates.crt");
+            boost::system::error_code ec;
+            ctx.load_verify_file(certPath ? certPath : bundle, ec);
+            if (!ec || certPath)
+            {
+                loaded = !ec;
+                break;
+            }
         }
-        catch (...)
+        if (!loaded)
         {
-            cwarn << "Failed to load ca certificates. Either the file "
-                     "'/etc/ssl/certs/ca-certificates.crt' does not exist";
-            cwarn << "or the environment variable SSL_CERT_FILE is set to an invalid or "
-                     "inaccessible file.";
+            cwarn << "Failed to load the CA certificates from "
+                  << (certPath ? certPath : "the usual locations")
+                  << ", set SSL_CERT_FILE to the CA bundle file.";
             cwarn << "It is possible that certificate verification can fail.";
         }
 #endif
