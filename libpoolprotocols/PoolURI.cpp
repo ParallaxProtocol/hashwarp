@@ -393,6 +393,15 @@ unsigned URI::Version() const
     return s_schemes[m_scheme].version;
 }
 
+std::string URI::strRedacted() const
+{
+    // Never leak the password (e.g. through the API): rebuild the uri
+    // from its parts and mask anything after ':' in the userinfo
+    if (m_userinfo.empty() || m_userinfo.find(':') == std::string::npos)
+        return m_uri;
+    return m_scheme + "://" + m_userinfo.substr(0, m_userinfo.find(':')) + ":***@" + m_urlinfo;
+}
+
 std::string URI::UserDotWorker() const
 {
     std::string _ret = m_user;

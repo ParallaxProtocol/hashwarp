@@ -363,7 +363,7 @@ Json::Value PoolManager::getConnectionsJson()
         Json::Value JConn;
         JConn["index"] = (unsigned)i;
         JConn["active"] = (i == m_activeConnectionIdx ? true : false);
-        JConn["uri"] = m_Settings.connections[i]->str();
+        JConn["uri"] = m_Settings.connections[i]->strRedacted();
         jRes.append(JConn);
     }
     return jRes;

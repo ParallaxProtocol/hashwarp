@@ -494,6 +494,21 @@ public:
             }
         }
 
+#if API_CORE
+        // Write access (positive port) lets clients add pools and restart the miner.
+        // Never expose that beyond the loopback interface without a password.
+        if (m_api_port > 0 && m_api_password.empty())
+        {
+            boost::system::error_code ec;
+            auto addr = boost::asio::ip::address::from_string(m_api_address, ec);
+            if (ec || !addr.is_loopback())
+                throw std::invalid_argument(
+                    "API bound to " + m_api_address +
+                    " with write access requires --api-password. Use a negative port for "
+                    "read-only access or bind to 127.0.0.1");
+        }
+#endif
+
         // Output warnings if any
         if (warnings.size())
         {
@@ -866,17 +881,21 @@ public:
                     "on. "
                  << endl
                  << "                        Use negative port number for readonly mode" << endl
-                 << "    --api-port          INT [1 .. 65535] Default not set" << endl
-                 << "                        Set the API port, the miner should listen on all "
-                    "bound"
+                 << "    --api-port          INT [-65535 .. 65535] Default not set" << endl
+                 << "                        Set the API port, the miner listens on 127.0.0.1"
                  << endl
-                 << "                        addresses. Use negative numbers for readonly mode"
+                 << "                        unless --api-bind is used. Use negative numbers for"
                  << endl
+                 << "                        readonly mode" << endl
                  << "    --api-password      TEXT Default not set" << endl
                  << "                        Set the password to protect interaction with API "
                     "server. "
                  << endl
-                 << "                        If not set, any connection is granted access. " << endl
+                 << "                        Required for write access on addresses other than"
+                 << endl
+                 << "                        loopback. If not set, any local connection is"
+                 << endl
+                 << "                        granted access." << endl
                  << "                        Be advised passwords are sent unencrypted over "
                     "plain "
                     "TCP!!"
@@ -1283,7 +1302,7 @@ private:
 #if API_CORE
     // -- API and Http interfaces related params
     string m_api_bind;                 // API interface binding address in form <address>:<port>
-    string m_api_address = "0.0.0.0";  // API interface binding address (Default any)
+    string m_api_address = "127.0.0.1";  // API interface binding address (Default loopback)
     int m_api_port = 0;                // API interface binding port
     string m_api_password;             // API interface write protection password
 #endif

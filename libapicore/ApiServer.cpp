@@ -176,6 +176,36 @@ static bool getRequestValue(const char* membername, std::string& refValue, Json:
     return true;
 }
 
+static std::string htmlEscape(const std::string& in)
+{
+    std::string out;
+    out.reserve(in.size());
+    for (char c : in)
+    {
+        switch (c)
+        {
+        case '&':
+            out += "&amp;";
+            break;
+        case '<':
+            out += "&lt;";
+            break;
+        case '>':
+            out += "&gt;";
+            break;
+        case '"':
+            out += "&quot;";
+            break;
+        case '\'':
+            out += "&#39;";
+            break;
+        default:
+            out += c;
+        }
+    }
+    return out;
+}
+
 static bool checkApiWriteAccess(bool is_read_only, Json::Value& jResponse)
 {
     if (is_read_only)
@@ -773,6 +803,13 @@ void ApiConnection::onRecvSocketDataCompleted(
         m_recvBuffer.consume(bytes_transferred);
         m_message.append(rx_message);
 
+        // Requests are small: drop clients that never send a line delimiter
+        if (m_message.size() > 65536)
+        {
+            disconnect();
+            return;
+        }
+
         std::string line;
         std::string linedelimiter;
         std::size_t linedelimiteroffset;
@@ -837,7 +874,7 @@ void ApiConnection::onRecvSocketDataCompleted(
                     std::string body = getHttpMinerStatDetail();
                     ss.clear();
                     ss << http_ver << " "
-                       << "200 Ok Error\r\n"
+                       << "200 OK\r\n"
                        << "Server: " << hashwarp_get_buildinfo()->project_name_with_version
                        << "\r\n"
                        << "Content-Type: text/html; charset=utf-8\r\n"
@@ -1101,7 +1138,7 @@ std::string ApiConnection::getHttpMinerStatDetail()
          << "<head>"
          << "<meta charset=utf-8>"
          << "<meta http-equiv=\"refresh\" content=\"30\">"
-         << "<title>" << jStat["host"]["name"].asString() << "</title>"
+         << "<title>" << htmlEscape(jStat["host"]["name"].asString()) << "</title>"
          << "<style>"
          << "body{font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,"
          << "\"Helvetica Neue\",Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;"
@@ -1123,9 +1160,9 @@ std::string ApiConnection::getHttpMinerStatDetail()
          << "<table class=mx-auto>"
          << "<thead>"
          << "<tr class=bg-header1>"
-         << "<th colspan=9>" << jStat["host"]["version"].asString() << " - " << setw(hoursSize)
+         << "<th colspan=9>" << htmlEscape(jStat["host"]["version"].asString()) << " - " << setw(hoursSize)
          << hours << ":" << setw(2) << setfill('0') << fixed << minutes
-         << "<br>Pool: " << jStat["connection"]["uri"].asString() << "</th>"
+         << "<br>Pool: " << htmlEscape(jStat["connection"]["uri"].asString()) << "</th>"
          << "</tr>"
          << "<tr class=bg-header0>"
          << "<th>PCI</th>"
@@ -1158,8 +1195,8 @@ std::string ApiConnection::getHttpMinerStatDetail()
         _ret << "<tr" << (device["mining"]["paused"].asBool() ? " class=\"bg-red\"" : "")
              << ">";  // Open row
 
-        _ret << "<td>" << device["hardware"]["pci"].asString() << "</td>";
-        _ret << "<td>" << device["hardware"]["name"].asString() << "</td>";
+        _ret << "<td>" << htmlEscape(device["hardware"]["pci"].asString()) << "</td>";
+        _ret << "<td>" << htmlEscape(device["hardware"]["name"].asString()) << "</td>";
         _ret << "<td>" << device["_mode"].asString() << "</td>";
 
         _ret << "<td>"
@@ -1233,7 +1270,7 @@ Json::Value ApiConnection::getMinerStatDetail()
     /* Connection info */
     Json::Value connectioninfo;
     auto connection = PoolManager::p().getActiveConnection();
-    connectioninfo["uri"] = connection->str();
+    connectioninfo["uri"] = connection->strRedacted();
     connectioninfo["connected"] = PoolManager::p().isConnected();
     connectioninfo["switches"] = PoolManager::p().getConnectionSwitches();
 

@@ -70,6 +70,7 @@ public:
     bool IsLoopBack() const;
     unsigned Version() const;
     std::string str() const { return m_uri; }
+    std::string strRedacted() const;  // str() with the password masked
 
     static std::string KnownSchemes(ProtocolFamily family);
 
