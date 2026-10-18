@@ -158,7 +158,6 @@ cmake .. -DXHASHCUDA=ON -DXHASHCL=OFF
 * `-DXHASHCL=ON` - enable OpenCL mining, `ON` by default.
 * `-DXHASHCUDA=ON` - enable CUDA mining, `ON` by default.
 * `-DAPICORE=ON` - enable API Server, `ON` by default.
-* `-DBINKERN=ON` - install AMD binary kernels, `ON` by default.
 * `-DETHDBUS=ON` - enable D-Bus support, `OFF` by default.
 * `-DUSE_SYS_OPENCL=ON` - Use system OpenCL, `OFF` by default, unless on macOS. Specify to use local **ROCm-OpenCL** package.
 

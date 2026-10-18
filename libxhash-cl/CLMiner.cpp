@@ -3,7 +3,6 @@
 /// @file
 /// @copyright GNU General Public License
 
-#include <boost/dll.hpp>
 
 #include <libparallaxcore/Farm.h>
 #include <libparallaxcore/XHashAux.h>
@@ -618,7 +617,6 @@ bool CLMiner::initDevice()
         m_hwmoninfo.deviceType = HwMonitorInfoType::NVIDIA;
         m_hwmoninfo.devicePciId = m_deviceDescriptor.uniqueId;
         m_hwmoninfo.deviceIndex = -1;  // Will be later on mapped by nvml (see Farm() constructor)
-        m_settings.noBinary = true;
     }
     else if (m_deviceDescriptor.clPlatformType == ClPlatformTypeEnum::Amd)
     {
@@ -631,14 +629,12 @@ bool CLMiner::initDevice()
         m_hwmoninfo.deviceType = HwMonitorInfoType::UNKNOWN;
         m_hwmoninfo.devicePciId = m_deviceDescriptor.uniqueId;
         m_hwmoninfo.deviceIndex = -1;  // Will be later on mapped by nvml (see Farm() constructor)
-        m_settings.noBinary = true;
     }
     else if (m_deviceDescriptor.clPlatformType == ClPlatformTypeEnum::Intel)
     {
         m_hwmoninfo.deviceType = HwMonitorInfoType::UNKNOWN;
         m_hwmoninfo.devicePciId = m_deviceDescriptor.uniqueId;
         m_hwmoninfo.deviceIndex = -1;  // Will be later on mapped by nvml (see Farm() constructor)
-        m_settings.noBinary = true;
         m_settings.noExit = true;
     }
     else
@@ -776,7 +772,7 @@ bool CLMiner::initEpoch_internal()
 
         // create miner OpenCL program
         cl::Program::Sources sources{{code.data(), code.size()}};
-        cl::Program program(m_context[0], sources), binaryProgram;
+        cl::Program program(m_context[0], sources);
         try
         {
             program.build({m_device}, options);
@@ -788,68 +784,6 @@ bool CLMiner::initEpoch_internal()
             cwarn << "OpenCL kernel build error (" << buildErr.err() << "):\n" << buildErr.what();
             pause(MinerPauseEnum::PauseDueToInitEpochError);
             return true;
-        }
-
-        /* If we have a binary kernel, we load it in tandem with the opencl,
-           that way, we can use the dag generate opencl code and fall back on
-           the default kernel if loading fails for whatever reason */
-        bool loadedBinary = false;
-        std::string device_name = m_deviceDescriptor.clName;
-
-        if (!m_settings.noBinary)
-        {
-            std::ifstream kernel_file;
-            vector<unsigned char> bin_data;
-            std::stringstream fname_strm;
-
-            /* Open kernels/xhash_{devicename}_lws{local_work_size}.bin */
-            std::transform(device_name.begin(), device_name.end(), device_name.begin(), ::tolower);
-            fname_strm << boost::dll::program_location().parent_path().string() << "/kernels/xhash_"
-                       << device_name << "_lws" << m_settings.localWorkSize
-                       << (m_settings.noExit ? "" : "_exit") << ".bin";
-            cllog << "Loading binary kernel " << fname_strm.str();
-            try
-            {
-                kernel_file.open(fname_strm.str(), ios::in | ios::binary);
-
-                if (kernel_file.good())
-                {
-                    /* Load the data vector with file data */
-                    kernel_file.unsetf(std::ios::skipws);
-                    bin_data.insert(bin_data.begin(),
-                        std::istream_iterator<unsigned char>(kernel_file),
-                        std::istream_iterator<unsigned char>());
-
-                    /* Setup the program */
-                    cl::Program::Binaries blobs({bin_data});
-                    cl::Program program(m_context[0], {m_device}, blobs);
-                    try
-                    {
-                        program.build({m_device}, options);
-                        cllog << "Build info success:"
-                              << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device);
-                        binaryProgram = program;
-                        loadedBinary = true;
-                    }
-                    catch (cl::Error const&)
-                    {
-                        cwarn << "Build failed! Info:"
-                              << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device);
-                        cwarn << fname_strm.str();
-                        cwarn << "Falling back to OpenCL kernel...";
-                    }
-                }
-                else
-                {
-                    cwarn << "Failed to load binary kernel: " << fname_strm.str();
-                    cwarn << "Falling back to OpenCL kernel...";
-                }
-            }
-            catch (...)
-            {
-                cwarn << "Failed to load binary kernel: " << fname_strm.str();
-                cwarn << "Falling back to OpenCL kernel...";
-            }
         }
 
         // create buffer for dag
@@ -902,12 +836,7 @@ bool CLMiner::initEpoch_internal()
             }
             cllog << "Loading kernels";
 
-            // If we have a binary kernel to use, let's try it
-            // otherwise just do a normal opencl load
-            if (loadedBinary)
-                m_searchKernel = cl::Kernel(binaryProgram, "search");
-            else
-                m_searchKernel = cl::Kernel(program, "search");
+            m_searchKernel = cl::Kernel(program, "search");
 
             m_dagKernel = cl::Kernel(program, "GenerateDAG");
 
