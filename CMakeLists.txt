@@ -24,7 +24,7 @@ HunterGate(
 )
 
 project(hashwarp)
-set(PROJECT_VERSION 1.2.0)
+set(PROJECT_VERSION 2.0.0)
 
 # The cable toolchain sets C++11 for Hunter packages; hashwarp itself is C++17
 set(CMAKE_CXX_STANDARD 17)
