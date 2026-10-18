@@ -968,17 +968,14 @@ Json::Value ApiConnection::getMinerStat1()
 
     jRes[0] = hashwarp_get_buildinfo()->project_name_with_version;  // miner version.
     jRes[1] = toString(runningTime.count());                        // running time, in minutes.
-    jRes[2] = totalMhEth.str();  // total ETH hashrate in MH/s, number of ETH shares, number of ETH
-                                 // rejected shares.
-    jRes[3] = detailedMhEth.str();  // detailed ETH hashrate for all GPUs.
-    jRes[4] = totalMhDcr.str();  // total DCR hashrate in MH/s, number of DCR shares, number of DCR
-                                 // rejected shares.
-    jRes[5] = detailedMhDcr.str();  // detailed DCR hashrate for all GPUs.
-    jRes[6] = tempAndFans.str();    // Temperature and Fan speed(%) pairs for all GPUs.
-    jRes[7] =
-        poolAddresses.str();  // current mining pool. For dual mode, there will be two pools here.
-    jRes[8] = invalidStats.str();  // number of ETH invalid shares, number of ETH pool switches,
-                                   // number of DCR invalid shares, number of DCR pool switches.
+    // Claymore compatible layout (fields 4 and 5 were the second coin of dual mining)
+    jRes[2] = totalMhEth.str();     // total hashrate in kh/s;accepted shares;rejected shares
+    jRes[3] = detailedMhEth.str();  // hashrate of each GPU in kh/s
+    jRes[4] = totalMhDcr.str();     // unused
+    jRes[5] = detailedMhDcr.str();  // unused
+    jRes[6] = tempAndFans.str();    // temperature;fan pairs of each GPU
+    jRes[7] = poolAddresses.str();  // current pool
+    jRes[8] = invalidStats.str();   // failed solutions;pool switches;unused;unused
 
     return jRes;
 }

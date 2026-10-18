@@ -15,7 +15,7 @@ public:
         {
             minelog << "DBus error " << err.name << ": " << err.message;
         }
-        dbus_bus_request_name(conn, "eth.miner", DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
+        dbus_bus_request_name(conn, "hashwarp.miner", DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
         if (dbus_error_is_set(&err))
         {
             minelog << "DBus error " << err.name << ": " << err.message;
@@ -27,7 +27,7 @@ public:
     void send(const char* hash)
     {
         DBusMessage* msg;
-        msg = dbus_message_new_signal("/eth/miner/hash", "eth.miner.monitor", "Hash");
+        msg = dbus_message_new_signal("/hashwarp/miner/hash", "hashwarp.miner.monitor", "Hash");
         if (msg == nullptr)
         {
             minelog << "Message is null!";

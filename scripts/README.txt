@@ -42,7 +42,7 @@ Files in This Package
 -------------------------------------------------------------------------------
 hashwarp.exe         - Hashwarp executable
 fix-opencl-icd.vbs   - Main script (VBScript). Double-click to run.
-README.txt           - This guide.
+fix-opencl-icd.txt   - This guide.
 
 -------------------------------------------------------------------------------
 How to Use

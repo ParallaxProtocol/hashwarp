@@ -3,150 +3,81 @@
 ## Table of Contents
 
 * [Requirements](#requirements)
-  * [Common](#common)
-  * [Linux](#linux)
-    * [OpenCL support on Linux](#opencl-support-on-linux)
-  * [macOS](#macos)
-  * [Windows](#windows)
+* [Instructions](#instructions)
+* [Docker](#docker)
 * [CMake configuration options](#cmake-configuration-options)
 * [Tests](#tests)
 * [Disable Hunter](#disable-hunter)
-* [Instructions](#instructions)
-  * [Windows-specific script](#windows-specific-script)
 
 ## Requirements
 
-This project uses [CMake] and [Hunter] package manager.
+Hashwarp is written in C++17 and built with [CMake], which downloads and builds the other
+dependencies (Boost, OpenSSL, jsoncpp, CLI11, the OpenCL loader) with [Hunter].
 
-### Common
+* [CMake] 3.21 or newer (CMake 4 works)
+* [Git](https://git-scm.com/downloads)
+* [Perl](https://www.perl.org/get.html), to build OpenSSL
+* A C++17 compiler: GCC 9 or newer, Clang 10 or newer, or Visual Studio 2017 or newer
+* For NVIDIA (CUDA) support, the [CUDA Toolkit](https://developer.nvidia.com/cuda-downloads):
+  * 12.8 or newer to build native code for Blackwell (RTX 50) GPUs
+  * CUDA 13 no longer supports Pascal and Volta GPUs: use 12.x to build for them
+* On Linux, the OpenGL headers for the OpenCL loader, e.g. on Ubuntu:
 
-1. [CMake] >= 3.5
-2. [Git](https://git-scm.com/downloads)
-3. [Perl](https://www.perl.org/get.html), needed to build OpenSSL
-4. [CUDA 12.2.2 Toolkit](https://developer.nvidia.com/cuda-12-2-2-download-archive) (optional, install if you want NVidia CUDA support)
+    ```shell
+    sudo apt install build-essential cmake git perl mesa-common-dev
+    ```
 
-### Linux
-
-1. GCC version >= 4.8, tested on GCC compiler 7.5.0
-2. CMake version 3.21.5
-
-``` shell
-wget https://github.com/Kitware/CMake/releases/download/v3.21.5/cmake-3.21.5.tar.gz
-tar -zxvf cmake-3.21.5.tar.gz
-cd cmake-3.21.5
-./bootstrap
-make
-sudo make install
-```
-
-3. DBUS development libs if building with `-DETHDBUS`. E.g. on Ubuntu run:
-
-```shell
-sudo apt install libdbus-1-dev
-```
-
-#### OpenCL support on Linux
-
-If you're planning to use [OpenCL on Linux](https://github.com/ruslo/hunter/wiki/pkg.opencl#pitfalls)
-you have to install the OpenGL libraries. E.g. on Ubuntu run:
-
-```shell
-sudo apt-get install mesa-common-dev
-```
-
-If you want to use locally installed [ROCm-OpenCL](https://rocmdocs.amd.com/en/latest/) package, use build flag `-DUSE_SYS_OPENCL=ON` with cmake config.
-
-### macOS
-
-1. GCC version >= TBF
-
-### Windows
-
-1. [Visual Studio 2017](https://www.visualstudio.com/downloads/); Community Edition works fine.
+  and the D-Bus development files if building with `-DETHDBUS=ON` (`libdbus-1-dev`)
 
 ## Instructions
 
-1. Make sure git submodules are up to date:
+1. Get the sources with their submodules:
 
     ```shell
-    git submodule update --init --recursive
+    git clone --recursive https://github.com/microstack-tech/hashwarp.git
+    cd hashwarp
     ```
 
-2. Create a build directory:
+    or, in an existing clone, `git submodule update --init --recursive`.
+
+2. Configure (see the [options](#cmake-configuration-options)) and build:
 
     ```shell
-    mkdir build
-    cd build
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+    cmake --build build --config Release -j
     ```
 
-3. Configure the project with CMake. Check out the additional [configuration options](#cmake-configuration-options).
+    The executable is `build/hashwarp/hashwarp` (`build\hashwarp\Release\hashwarp.exe` on Windows).
+    The first configuration downloads and builds the dependencies, which takes a while.
+
+    On Windows run the commands from a "x64 Native Tools Command Prompt" of Visual Studio, with
+    Perl and CMake in the `PATH`.
+
+3. Optionally:
 
     ```shell
-    cmake ..
+    cmake --build build --target package       # release archive with docs and start scripts
+    cmake --build build --target rig-packages  # HiveOS and mmpOS packages (Linux)
+    sudo cmake --install build                 # install the executable (Linux)
     ```
 
-    On Windows:
+To build for a different CUDA toolkit or host compiler than the defaults:
 
-    ```shell
-    cmake .. -G "Visual Studio 15 2017 Win64"
-    ```
-
-4. Build the project using [CMake Build Tool Mode]. This is a portable variant of `make`.
-
-    ```shell
-    cmake --build .
-    ```
-
-    Note: On Windows, it is possible to have compiler issues if you don't specify the build config. In that case use:
-
-    ```shell
-    cmake --build . --config Release
-    ```
-
-5. Generate the executable
-
-    ```shell
-    make all
-    ```
-
-    will find the executable in **hashwarp/hashwarp** in the **build** directory
-6. _(Optional, Linux only)_ Install the built executable:
-
-    ```shell
-    sudo make install
-    ```
-
-### Windows-specific script
-
-Complete sample Windows batch file - **adapt it to your system**. Assumes that:
-
-* it's placed one folder up from the hashwarp source folder
-* you have CMake installed
-* you have Perl installed
-* you have CUDA 12.2.2 Toolkit installed (optional, can disable by setting `-DXHASHCUDA=OFF`)
-
-```bat
-@echo off
-setlocal
-
-rem add MSVC in PATH
-call "%ProgramFiles(x86)%\Microsoft Visual Studio\2017\Community\Common7\Tools\VsMSBuildCmd.bat"
-
-rem add Perl in PATH; it's needed for OpenSSL build
-set "PERL_PATH=C:\Perl\perl\bin"
-set "PATH=%PERL_PATH%;%PATH%"
-
-rem switch to hashwarp's source folder
-cd "%~dp0\hashwarp\"
-
-if not exist "build\" mkdir "build\"
-
-cmake -G "Visual Studio 15 2017 Win64" -H. -Bbuild -DXHASHCUDA=ON ..
-cmake --build . --config Release --target package
-
-endlocal
-pause
+```shell
+cmake -S . -B build -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.9/bin/nvcc \
+    -DCMAKE_CUDA_HOST_COMPILER=g++-12
 ```
+
+## Docker
+
+```shell
+docker build -f packaging/docker/Dockerfile -t hashwarp .
+docker run --rm --gpus all hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress
+```
+
+The image builds hashwarp with CUDA 12.9 (`--build-arg CUDA_VERSION=...` for another version) and
+runs the unit tests. Mining on NVIDIA GPUs in a container needs the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/).
 
 ## CMake configuration options
 

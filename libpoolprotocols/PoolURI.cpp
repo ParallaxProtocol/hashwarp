@@ -35,8 +35,7 @@ struct SchemeAttributes
 
 static std::map<std::string, SchemeAttributes> s_schemes = {
     /*
-    This schemes are kept for backwards compatibility.
-    Ethminer do perform stratum autodetection
+    stratum+ autodetects the stratum flavour, the numbered schemes force one
     */
     {"stratum+tcp", {ProtocolFamily::STRATUM, SecureLevel::NONE, 0}},
     {"stratum1+tcp", {ProtocolFamily::STRATUM, SecureLevel::NONE, 1}},

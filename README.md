@@ -1,86 +1,131 @@
 # Hashwarp
 
-[![standard-readme compliant](https://img.shields.io/badge/readme%20style-standard-brightgreen.svg)](https://github.com/RichardLitt/standard-readme)
-[![Gitter](https://img.shields.io/gitter/room/nwjs/nw.js.svg)][Gitter]
 [![Releases](https://img.shields.io/github/downloads/microstack-tech/hashwarp/total.svg)][Releases]
+[![AppVeyor](https://img.shields.io/appveyor/ci/microstack-tech/hashwarp/main.svg)][AppVeyor]
 
-> Parallax miner with OpenCL and stratum support
+> The official GPU miner for [Parallax](https://parallaxprotocol.org) (XHash): open source, no fee.
 
-**Hashwarp** is a Parallax GPU miner: with Hashwarp you can mine Parallax which relies on the XHash Proof of Work algorithm. Hashwarp is a fork of Ethminer which originates from [cpp-ethereum] project (where GPU mining has been discontinued) and builds on the improvements made in [Genoil's fork]. See [FAQ](#faq) for more details.
+Hashwarp mines Parallax on NVIDIA GPUs (CUDA) and on AMD, Intel and NVIDIA GPUs (OpenCL), on pools
+or solo on your own node.
 
-## Features
-
-* OpenCL mining
-* Nvidia CUDA mining
-* realistic benchmarking against arbitrary epoch/DAG/blocknumber
-* on-GPU DAG generation (no more DAG files on disk)
-* stratum mining without proxy
-* OpenCL devices picking
-* farm failover (getwork + stratum)
+* **Pools and solo**: stratum (EthProxy, EthereumStratum/1.0.0 NiceHash and 2.0.0) with TLS and
+  failover pools, or getwork on a Parallax node
+* **Easy to start**: a short wizard on first run, `--pool`/`--wallet` options, JSON configuration files
+* **Clear output**: hashrate with 1 and 15 minute averages, effective (pool side) hashrate, a per GPU
+  table with temperatures, fans, power and efficiency, one line per share with its difficulty,
+  latency and the pool's reason when rejected, keys to pause GPUs or show statistics
+* **Safe**: temperature limits per GPU (core, memory or hotspot), a shutdown temperature, a watchdog
+  that restarts failed GPUs and exits with a distinct code when a GPU hangs, every share checked on
+  the CPU before it is submitted, `--selftest` to check GPUs offline
+* **Monitoring**: a web dashboard, a JSON API and Prometheus metrics
+* **Rig operating systems**: HiveOS and mmpOS packages, a Docker image
 
 ## Table of Contents
 
 * [Install](#install)
-* [Usage](#usage)
-  * [Examples connecting to pools](#examples-connecting-to-pools)
+* [Quick start](#quick-start)
+* [Configuration](#configuration)
+* [Monitoring](#monitoring)
+* [Safety](#safety)
+* [Exit codes](#exit-codes)
 * [Build](#build)
-  * [Continuous Integration and development builds](#continuous-integration-and-development-builds)
-  * [Building from source](#building-from-source)
-* [Maintainers & Authors](#maintainers--authors)
-* [Contribute](#contribute)
-* [F.A.Q.](#faq)
+* [License](#license)
 
 ## Install
 
-[![Releases](https://img.shields.io/github/downloads/microstack-tech/hashwarp/total.svg)][Releases]
+Download the archive for your operating system from [Releases] and extract it. It contains the
+`hashwarp` executable, a sample configuration (`hashwarp.json.example`) and start scripts.
 
-Standalone **executables** for *Windows* and *Linux* are provided in
-the [Releases] section.
-Download an archive for your operating system and unpack the content to a place
-accessible from command line. The Hashwarp is ready to go.
+* **NVIDIA**: driver 525 or newer
+* **AMD**: the AMD driver with OpenCL (ROCm or Adrenalin)
+* **Windows**: the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
 
-| Builds | Release | Date |
-| ------ | ------- | ---- |
-| Last   | [![GitHub release](https://img.shields.io/github/release/microstack-tech/hashwarp/all.svg)](https://github.com/microstack-tech/hashwarp/releases) | [![GitHub Release Date](https://img.shields.io/github/release-date-pre/microstack-tech/hashwarp.svg)](https://github.com/microstack-tech/hashwarp/releases) |
-| Stable | [![GitHub release](https://img.shields.io/github/release/microstack-tech/hashwarp.svg)](https://github.com/microstack-tech/hashwarp/releases/latest) | [![GitHub Release Date](https://img.shields.io/github/release-date/microstack-tech/hashwarp.svg)](https://github.com/microstack-tech/hashwarp/releases/latest) |
+## Quick start
 
-## Usage
+Run `hashwarp` without arguments: it asks whether you mine on a pool or solo, saves the answers in
+`hashwarp.json` and starts mining. Next time it starts with that configuration.
 
-The **hashwarp** is a command line program. This means you launch it either
-from a Windows command prompt or Linux console, or create shortcuts to
-predefined command lines using a Linux Bash script or Windows batch/cmd file.
-For a full list of available command, please run:
+Or give the options on the command line:
 
 ```sh
-hashwarp --help
+# On a pool (find Parallax pools at https://docs.parallaxprotocol.org)
+hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker rig1
+
+# TLS, and a failover pool
+hashwarp --pool pool.example.com:4443,backup.example.com:4443 --tls --wallet 0xYourParallaxAddress
+
+# Solo on your own node, started with
+#   parallaxd --http --http.api eth,net,web3,miner --mine --miner.coinbase 0xYourParallaxAddress
+hashwarp --solo
 ```
 
-### Examples connecting to pools
+`hashwarp --list-devices` lists the GPUs, `hashwarp --selftest` checks them, `hashwarp --help` shows
+every option. See [docs/MINING.md](docs/MINING.md) for pools, solo mining, GPU selection and tuning.
 
-Check our [samples](docs/POOL_EXAMPLES_ETH.md) to see how to connect to different pools.
+While mining, press `h` for the keys: `s` statistics, `p`/`r` pause/resume all GPUs, `0`-`9`
+pause/resume one GPU, `c` connection details, `l` debug output, `q` quit.
+
+## Configuration
+
+Every option can be given on the command line or in a JSON file, under the option's name without
+the leading dashes. Options on the command line override the file.
+
+```json
+{
+    "pool": ["pool.example.com:3333"],
+    "wallet": "0xYourParallaxAddress",
+    "worker": "rig1",
+    "temp-stop": [85],
+    "api-bind": "127.0.0.1:21550"
+}
+```
+
+```sh
+hashwarp --config hashwarp.json        # explicit file
+hashwarp                               # hashwarp.json next to the executable or in the working directory
+hashwarp --pool ... --save-config hashwarp.json   # write the options given to a file
+```
+
+Options that take one value per GPU (tuning, temperature limits) accept a comma separated list in
+the order of `--gpu-id` (or of `--list-devices`); a single value applies to all GPUs.
+
+## Monitoring
+
+`--api-bind 127.0.0.1:21550` serves a dashboard on http://127.0.0.1:21550, a JSON summary on
+`/api/v1/summary` and Prometheus metrics on `/metrics`. Add `--api-token` to require a token and
+`--api-allow-control` to allow pausing, resuming and restarting from the API. See
+[docs/API.md](docs/API.md).
+
+## Safety
+
+* `--temp-stop 85 --temp-resume 70` pauses a GPU at 85°C and resumes it at 70°C;
+  `--mem-temp-stop` does the same with the memory (or hotspot) temperature
+* `--shutdown-temp 95` stops hashwarp if any GPU reaches 95°C
+* the watchdog restarts a GPU whose mining failed (`--watchdog-restarts` times per hour) and exits
+  when a GPU stops responding for `--watchdog-timeout` seconds, optionally running
+  `--watchdog-script` first (e.g. to reboot the rig)
+* every solution is checked on the CPU before it's submitted; incorrect ones (often from too much
+  overclocking) are reported per GPU
+
+## Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| 0 | Normal exit (or `--selftest` passed) |
+| 1 | Invalid options (or `--selftest` failed) |
+| 2 | Runtime error, e.g. no usable GPU |
+| 5 | Watchdog: a GPU kept failing or stopped responding |
+| 6 | A GPU reached `--shutdown-temp` |
 
 ## Build
 
-### Continuous Integration and development builds
-
-| CI            | OS            | Status  | Development builds |
-| ------------- | ------------- | -----   | -----------------  |
-| [AppVeyor]    | Windows, Linux | [![AppVeyor](https://img.shields.io/appveyor/ci/microstack-tech/hashwarp/main.svg)][AppVeyor] | ✓ Build artifacts available for the `main` branch |
-
-The AppVeyor system automatically builds a Windows .exe and a Linux binary for every commit in the `main` branch. The latest version is always available [on the landing page](https://ci.appveyor.com/project/microstack-tech/hashwarp) or you can [browse the history](https://ci.appveyor.com/project/microstack-tech/hashwarp/history) to access previous builds.
-
-To download the .exe on a build under `Job name` select the CUDA version you use, choose `Artifacts` then download the zip file.
-
-### Building from source
-
-See [docs/BUILD.md](docs/BUILD.md) for build/compilation details.
+See [docs/BUILD.md](docs/BUILD.md). The AppVeyor builds of the `main` branch are available
+[on the project page][AppVeyor].
 
 ## License
 
-Licensed under the [GNU General Public License, Version 3](LICENSE).
+Licensed under the [GNU General Public License, Version 3](LICENSE). Hashwarp started as a fork of
+[ethminer](https://github.com/ethereum-mining/ethminer).
 
 [AppVeyor]: https://ci.appveyor.com/project/microstack-tech/hashwarp
-[cpp-ethereum]: https://github.com/ethereum/cpp-ethereum
-[Genoil's fork]: https://github.com/Genoil/cpp-ethereum
-[Gitter]: https://gitter.im/microstack-tech/hashwarp
 [Releases]: https://github.com/microstack-tech/hashwarp/releases
