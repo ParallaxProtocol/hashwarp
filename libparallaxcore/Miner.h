@@ -101,6 +101,7 @@ struct CUSettings : public MinerSettings
     unsigned schedule = 4;
     unsigned gridSize = 8192;
     unsigned blockSize = 128;
+    int kernel = -1;  // Search kernel variant (see run_xhash_search), -1 = time both and pick
 };
 
 // Holds settings for OpenCL Miner

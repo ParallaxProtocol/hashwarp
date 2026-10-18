@@ -83,6 +83,11 @@ private:
     std::vector<cudaStream_t> m_streams;
     uint64_t m_current_target = 0;
 
+    // Times the search kernel variants and returns the fastest
+    unsigned tuneKernel();
+    unsigned m_kernel = 0;       // Search kernel variant in use
+    bool m_kernelTuned = false;  // Auto tuning is done once
+
     CUSettings m_settings;
 
     const uint32_t m_batch_size;

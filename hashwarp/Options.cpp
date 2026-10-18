@@ -328,6 +328,11 @@ void registerOptions(CLI::App& _app, Options& _o)
             "How the CPU waits for CUDA kernels: auto, spin, yield or sync (all GPUs)")
         ->check(CLI::IsMember({"auto", "spin", "yield", "sync"}))
         ->group(c_groupTuning);
+    _app.add_option("--cuda-kernel", _o.cudaKernel,
+            "CUDA search kernel: auto (time both on each GPU at start), 0 (best when memory "
+            "bandwidth limits the hashrate) or 1 (best when compute does)")
+        ->check(CLI::IsMember({"auto", "0", "1"}))
+        ->group(c_groupTuning);
     _app.add_option("--cl-global-work", _o.clGlobalWork,
             "OpenCL global work size multiplier (default 65536)")
         ->delimiter(',')

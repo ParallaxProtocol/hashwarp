@@ -16,11 +16,12 @@
 
 #include "dagger_shuffled.cuh"
 
+template <bool DedupOffsets>
 __global__ void xhash_search(volatile Search_results* g_output, uint64_t start_nonce)
 {
     uint32_t const gid = blockIdx.x * blockDim.x + threadIdx.x;
     uint2 mix[4];
-    if (compute_hash(start_nonce + gid, mix))
+    if (compute_hash<DedupOffsets>(start_nonce + gid, mix))
         return;
     uint32_t index = atomicInc((uint32_t*)&g_output->count, 0xffffffff);
     if (index >= MAX_SEARCH_RESULTS)
@@ -37,9 +38,12 @@ __global__ void xhash_search(volatile Search_results* g_output, uint64_t start_n
 }
 
 void run_xhash_search(uint32_t gridSize, uint32_t blockSize, cudaStream_t stream,
-    volatile Search_results* g_output, uint64_t start_nonce)
+    volatile Search_results* g_output, uint64_t start_nonce, unsigned kernel)
 {
-    xhash_search<<<gridSize, blockSize, 0, stream>>>(g_output, start_nonce);
+    if (kernel == 1)
+        xhash_search<true><<<gridSize, blockSize, 0, stream>>>(g_output, start_nonce);
+    else
+        xhash_search<false><<<gridSize, blockSize, 0, stream>>>(g_output, start_nonce);
     CUDA_SAFE_CALL(cudaGetLastError());
 }
 

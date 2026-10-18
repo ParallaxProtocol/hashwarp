@@ -61,8 +61,9 @@ void set_header(hash32_t _header);
 
 void set_target(uint64_t _target);
 
+// kernel: 0 all lanes compute the DAG addresses, 1 one lane per hash (see compute_hash)
 void run_xhash_search(uint32_t gridSize, uint32_t blockSize, cudaStream_t stream,
-    volatile Search_results* g_output, uint64_t start_nonce);
+    volatile Search_results* g_output, uint64_t start_nonce, unsigned kernel);
 
 void xhash_generate_dag(uint64_t dag_size, uint32_t blocks, uint32_t threads, cudaStream_t stream);
 

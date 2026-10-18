@@ -257,6 +257,12 @@ void CUDAMiner::workLoop()
                 if (epochInitFailed())
                     continue;
 
+                if (!m_kernelTuned)
+                {
+                    m_kernelTuned = true;
+                    m_kernel = m_settings.kernel >= 0 ? unsigned(m_settings.kernel) : tuneKernel();
+                }
+
                 // As DAG generation takes a while we need to
                 // ensure we're on latest job, not on the one
                 // which triggered the epoch change
@@ -303,6 +309,62 @@ void CUDAMiner::workLoop()
         _what.append(_e.what());
         throw std::runtime_error(_what);
     }
+}
+
+unsigned CUDAMiner::tuneKernel()
+{
+    // Search a dummy job nobody can solve (target 0) with each variant in turn
+    hash32_t header;
+    for (auto& w : header.uint4s)
+        w = make_uint4(0x12345678, 0x9abcdef0, 0x0fedcba9, 0x87654321);
+    set_header(header);
+    set_target(0);
+    m_current_target = 0;
+
+    const unsigned c_variants = 2;
+    const char* const names[c_variants] = {"standard", "dedup"};
+    double seconds[c_variants] = {0, 0};
+    uint64_t hashes[c_variants] = {0, 0};
+    cudaStream_t stream = m_streams[0];
+    volatile Search_results& buffer(*m_search_buf[0]);
+    cudaEvent_t start, stop;
+    CUDA_SAFE_CALL(cudaEventCreate(&start));
+    CUDA_SAFE_CALL(cudaEventCreate(&stop));
+
+    // Batches for about 0.3 s at 100 MH/s per round, at least 8
+    unsigned batches = std::max(8u, unsigned(30000000ull / m_batch_size));
+    uint64_t nonce = 0;
+    for (unsigned round = 0; round < 4; round++)
+        for (unsigned v = 0; v < c_variants; v++)
+        {
+            CUDA_SAFE_CALL(cudaEventRecord(start, stream));
+            for (unsigned b = 0; b < batches; b++, nonce += m_batch_size)
+                run_xhash_search(m_settings.gridSize, m_settings.blockSize, stream, &buffer, nonce, v);
+            CUDA_SAFE_CALL(cudaEventRecord(stop, stream));
+            CUDA_SAFE_CALL(cudaEventSynchronize(stop));
+            float ms = 0;
+            CUDA_SAFE_CALL(cudaEventElapsedTime(&ms, start, stop));
+            if (round == 0)
+                continue;  // warm up (clocks, caches)
+            seconds[v] += ms / 1000.0;
+            hashes[v] += uint64_t(batches) * m_batch_size;
+        }
+    CUDA_SAFE_CALL(cudaEventDestroy(start));
+    CUDA_SAFE_CALL(cudaEventDestroy(stop));
+    buffer.count = 0;
+    heartbeat();
+
+    unsigned best = 0;
+    std::ostringstream ss;
+    for (unsigned v = 0; v < c_variants; v++)
+    {
+        double rate = seconds[v] > 0 ? hashes[v] / seconds[v] : 0;
+        if (v && rate > (seconds[best] > 0 ? hashes[best] / seconds[best] : 0))
+            best = v;
+        ss << (v ? ", " : "") << names[v] << " " << dev::getFormattedHashes(rate) << "/s";
+    }
+    cudalog << "Kernel tuning: " << ss.str() << ". Using " << names[best];
+    return best;
 }
 
 void CUDAMiner::kick_miner()
@@ -406,7 +468,8 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
         buffer.count = 0;
 
         // Run the batch for this stream
-        run_xhash_search(m_settings.gridSize, m_settings.blockSize, m_streams[i], &buffer, start_nonce);
+        run_xhash_search(
+            m_settings.gridSize, m_settings.blockSize, m_streams[i], &buffer, start_nonce, m_kernel);
         stream_nonce[i] = start_nonce;
         stream_active[i] = true;
         active++;
@@ -476,8 +539,8 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
             uint64_t nonce_base = stream_nonce[i];
             if (!done && inRange(start_nonce))
             {
-                run_xhash_search(
-                    m_settings.gridSize, m_settings.blockSize, stream, &buffer, start_nonce);
+                run_xhash_search(m_settings.gridSize, m_settings.blockSize, stream, &buffer,
+                    start_nonce, m_kernel);
                 stream_nonce[i] = start_nonce;
                 start_nonce += m_batch_size;
             }

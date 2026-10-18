@@ -4,8 +4,23 @@
 
 #include "cuda_helper.h"
 
+// Hashes each group of THREADS_PER_HASH lanes computes at once
 #define _PARALLEL_HASH 4
 
+// Development builds (-DHASHWARP_COMPUTE_BENCH=ON) confine DAG reads to 32 MB, which stays
+// in L2: memory stops being the bottleneck and the hashrate measures the kernel's compute
+// efficiency, as on compute bound GPUs. The hashes are wrong: never use it to mine.
+#ifdef XHASH_COMPUTE_BENCH
+#define DAG_ACCESS_ITEMS (d_dag_size < 262144u ? d_dag_size : 262144u)
+#else
+#define DAG_ACCESS_ITEMS d_dag_size
+#endif
+
+// DedupOffsets: every lane computes the next DAG address of one hash and shares it,
+// instead of all lanes computing the addresses of all the hashes. Fewer instructions
+// (faster on compute bound GPUs) but the hashes wait on each other, which leaves fewer
+// memory requests in flight (slower on memory bound GPUs). The miner times both.
+template <bool DedupOffsets>
 DEV_INLINE bool compute_hash(uint64_t nonce, uint2* mix_hash)
 {
     // sha3_512(header .. nonce)
@@ -52,17 +67,51 @@ DEV_INLINE bool compute_hash(uint64_t nonce, uint2* mix_hash)
             init0[p] = SHFL(shuffle[0].x, 0, THREADS_PER_HASH);
         }
 
-        for (uint32_t a = 0; a < ACCESSES; a += 4)
+        if (DedupOffsets)
         {
-            int t = bfe(a, 2u, 3u);
+            // The next DAG address of hash p only depends on one word of lane t's mix:
+            // lane p computes it for hash p and shares it
+            uint32_t own_init0 = init0[0];
+            for (int p = 1; p < _PARALLEL_HASH; p++)
+                own_init0 = (thread_id == p) ? init0[p] : own_init0;
 
-            for (uint32_t b = 0; b < 4; b++)
+            for (uint32_t a = 0; a < ACCESSES; a += 4)
             {
-                for (int p = 0; p < _PARALLEL_HASH; p++)
+                int t = bfe(a, 2u, 3u);
+
+                for (uint32_t b = 0; b < 4; b++)
                 {
-                    offset[p] = fnv(init0[p] ^ (a + b), ((uint32_t*)&mix[p])[b]) % d_dag_size;
-                    offset[p] = SHFL(offset[p], t, THREADS_PER_HASH);
-                    mix[p] = fnv4(mix[p], d_dag[offset[p]].uint4s[thread_id]);
+                    uint32_t own_word = 0;
+                    for (int p = 0; p < _PARALLEL_HASH; p++)
+                    {
+                        uint32_t word = SHFL(((uint32_t*)&mix[p])[b], t, THREADS_PER_HASH);
+                        own_word = (thread_id == p) ? word : own_word;
+                    }
+                    uint32_t own_offset = fnv(own_init0 ^ (a + b), own_word) % DAG_ACCESS_ITEMS;
+
+                    for (int p = 0; p < _PARALLEL_HASH; p++)
+                    {
+                        offset[p] = SHFL(own_offset, p, THREADS_PER_HASH);
+                        mix[p] = fnv4(mix[p], d_dag[offset[p]].uint4s[thread_id]);
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (uint32_t a = 0; a < ACCESSES; a += 4)
+            {
+                int t = bfe(a, 2u, 3u);
+
+                for (uint32_t b = 0; b < 4; b++)
+                {
+                    for (int p = 0; p < _PARALLEL_HASH; p++)
+                    {
+                        offset[p] =
+                            fnv(init0[p] ^ (a + b), ((uint32_t*)&mix[p])[b]) % DAG_ACCESS_ITEMS;
+                        offset[p] = SHFL(offset[p], t, THREADS_PER_HASH);
+                        mix[p] = fnv4(mix[p], d_dag[offset[p]].uint4s[thread_id]);
+                    }
                 }
             }
         }

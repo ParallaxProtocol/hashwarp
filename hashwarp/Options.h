@@ -52,6 +52,7 @@ struct Options
     std::vector<unsigned> cudaBlockSize;
     std::vector<unsigned> cudaStreams;
     std::string cudaSchedule = "sync";
+    std::string cudaKernel = "auto";
     std::vector<unsigned> clGlobalWork;
     std::vector<unsigned> clLocalWork;
     bool clNoExit = false;

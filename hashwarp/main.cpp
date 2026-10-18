@@ -383,6 +383,7 @@ public:
         static const std::map<string, unsigned> schedules = {
             {"auto", 0}, {"spin", 1}, {"yield", 2}, {"sync", 4}};
         m_CUSettings.schedule = schedules.at(m_opts.cudaSchedule);
+        m_CUSettings.kernel = m_opts.cudaKernel == "auto" ? -1 : std::stoi(m_opts.cudaKernel);
 #endif
         if (m_opts.backend == "cuda")
             m_minerType = MinerType::CUDA;
