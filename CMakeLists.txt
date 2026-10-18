@@ -26,6 +26,11 @@ HunterGate(
 project(hashwarp)
 set(PROJECT_VERSION 1.2.0)
 
+# The cable toolchain sets C++11 for Hunter packages; hashwarp itself is C++17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 cable_set_build_type(DEFAULT Release CONFIGURATION_TYPES Release RelWithDebInfo)
 
 option(XHASHCL "Build with OpenCL mining" ON)
