@@ -520,7 +520,8 @@ void CLMiner::enumDevices(std::map<string, DeviceDescriptor>& _DevicesCollection
             platformType = ClPlatformTypeEnum::Intel;
         else
         {
-            std::cerr << "Unrecognized platform " << platformName << std::endl;
+            // e.g. Mesa's rusticl, installed alongside the GPU vendors' drivers
+            cdebug << "Skipping OpenCL platform " << platformName << ": not supported";
             continue;
         }
 
