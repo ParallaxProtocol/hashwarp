@@ -339,6 +339,8 @@ public:
             throw std::invalid_argument(e.what());
         }
         m_opts.soloRequested = app.count("--solo") > 0;
+        if (app.count("--selftest") && !m_opts.selftestSeconds)
+            m_opts.selftestSeconds = 30;
 
         if (!m_opts.saveConfig.empty())
         {
@@ -400,6 +402,14 @@ public:
         m_PoolSettings.reportHashrate = m_opts.reportHashrate;
         m_cliDisplayInterval = m_opts.displayInterval;
 
+        if (m_opts.selftestSeconds)
+        {
+            // Offline, at an easy difficulty so every GPU finds solutions quickly
+            if (m_opts.benchmarkBlock < 0)
+                m_opts.benchmarkBlock = c_selftestBlock;
+            m_PoolSettings.simulationDifficulty = 0.01;
+            m_FarmSettings.noEval = false;
+        }
         if (m_opts.benchmarkBlock >= 0)
         {
             m_mode = OperationMode::Simulation;
@@ -722,11 +732,30 @@ private:
                 cnote << "Press " EthWhite "h" EthReset " for the keys";
         }
 
-        // Stay in non-busy wait till signals arrive
+        // Stay in non-busy wait till signals arrive (or the self-test ends)
         unique_lock<mutex> clilock(m_climtx);
+        auto selftestEnd =
+            std::chrono::steady_clock::now() + std::chrono::seconds(m_opts.selftestSeconds);
         while (g_running)
-            g_shouldstop.wait(clilock);
+        {
+            if (!m_opts.selftestSeconds)
+            {
+                g_shouldstop.wait(clilock);
+                continue;
+            }
+            g_shouldstop.wait_for(clilock, std::chrono::seconds(1));
+            auto now = std::chrono::steady_clock::now();
+            if (now >= selftestEnd ||
+                (selftestDone() && now >= selftestEnd - std::chrono::seconds(m_opts.selftestSeconds) +
+                                               std::chrono::seconds(15)))
+                break;
+        }
         hotkeys.reset();
+        if (m_opts.selftestSeconds)
+        {
+            g_running = false;
+            g_exitCode = selftestReport() ? 0 : 1;
+        }
 
 #if API_CORE
 
@@ -741,6 +770,54 @@ private:
         cnote << "Terminated!";
         return;
     }
+
+    // Whether every GPU found enough solutions and has a measured hashrate
+    static bool selftestDone()
+    {
+        auto miners = Farm::f().getMiners();
+        if (miners.empty())
+            return false;
+        const TelemetryType& t = Farm::f().Telemetry();
+        for (auto const& miner : miners)
+        {
+            unsigned i = miner->Index();
+            auto s = Farm::f().getSolutions(i);
+            if (s.failed || s.rejected)
+                return true;  // Already failed
+            if (s.accepted < c_selftestSolutions || i >= t.miners.size() ||
+                t.miners[i].hashrate60 <= 0)
+                return false;
+        }
+        return true;
+    }
+
+    // Prints the self-test verdict of each GPU, returns whether all passed
+    static bool selftestReport()
+    {
+        bool allPassed = true;
+        const TelemetryType& t = Farm::f().Telemetry();
+        cnote << EthWhiteBold "Self-test results" EthReset;
+        for (auto const& miner : Farm::f().getMiners())
+        {
+            unsigned i = miner->Index();
+            auto s = Farm::f().getSolutions(i);
+            bool passed = s.accepted > 0 && !s.failed && !s.rejected;
+            allPassed = allPassed && passed;
+            float hr = i < t.miners.size() ? t.miners[i].hashrate60 : 0;
+            if (passed)
+                cnote << "GPU " << i << " " << miner->getDescriptor().name << ": " EthLime "PASS" EthReset
+                      << " (" << s.accepted << " solutions verified, "
+                      << getFormattedHashes(hr) << "/s)";
+            else
+                cerror << "GPU " << i << " " << miner->getDescriptor().name << ": FAIL ("
+                       << s.accepted << " correct, " << s.failed + s.rejected << " incorrect"
+                       << (s.accepted ? "" : ", no solution found") << ")";
+        }
+        return allPassed;
+    }
+
+    static const unsigned c_selftestSolutions = 5;
+    static const unsigned c_selftestBlock = 60480;  // Epoch 84
 
     // Global boost's io_service
     std::thread m_io_thread;                        // The IO service thread

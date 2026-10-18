@@ -493,7 +493,8 @@ protected:
     void waitForWork();
 
     /// Test hook for the watchdog: with HASHWARP_FAULT_INJECTION=crash the work
-    /// loop throws after 10 seconds of hashing, with =hang it blocks forever.
+    /// loop throws after 10 seconds of hashing, with =hang it blocks forever
+    /// (=bad-solution makes Farm see wrong solutions).
     /// Called by work loops after each batch
     void faultInjectionPoint();
 

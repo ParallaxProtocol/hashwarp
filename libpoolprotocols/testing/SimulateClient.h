@@ -16,7 +16,7 @@ using namespace eth;
 class SimulateClient : public PoolClient, Worker
 {
 public:
-    SimulateClient(unsigned const& block);
+    SimulateClient(unsigned const& block, double _difficulty = 1);
     ~SimulateClient() override;
 
     void connect() override;
@@ -34,7 +34,8 @@ private:
     unsigned m_block;
     std::chrono::steady_clock::time_point m_start_time;
 
-    float hr_alpha = 0.45f;
+    double m_difficulty = 1;
     float hr_max = 0.0f;
-    float hr_mean = 0.0f;
+    double hr_sum = 0;          // Of the samples taken while hashing
+    unsigned hr_samples = 0;
 };

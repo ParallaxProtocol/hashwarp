@@ -39,7 +39,7 @@ const std::map<std::string, unsigned> c_debugCategories = {{"json", LOG_JSON},
 
 // Options which are never written to a configuration file
 const std::set<std::string> c_notSaved = {"help", "help-all", "version", "config", "save-config",
-    "list-devices", "benchmark"};
+    "list-devices", "benchmark", "selftest"};
 
 bool isInteger(const std::string& _s)
 {
@@ -450,6 +450,12 @@ void registerOptions(CLI::App& _app, Options& _o)
             "Benchmark offline on the DAG of this block number")
         ->default_str("")
         ->group(c_groupMisc);
+    _app.add_option("--selftest", _o.selftestSeconds,
+            "Check every GPU's results on the CPU offline for up to this many seconds "
+            "(default 30) and exit with 0 if all are correct")
+        ->expected(0, 1)
+        ->default_str("30")
+        ->group(c_groupMisc);
     _app.add_flag("--exit", _o.exitOnError, "Exit when a GPU fails instead of carrying on")
         ->group(c_groupMisc);
 
@@ -523,8 +529,8 @@ std::vector<std::string> validateOptions(Options& _o)
     if (_o.soloRequested && _o.solo.empty())
         _o.solo = c_defaultSoloUrl;
 
-    if (!_o.listDevices && _o.benchmarkBlock < 0 && _o.saveConfig.empty() && _o.pools.empty() &&
-        !_o.soloRequested)
+    if (!_o.listDevices && _o.benchmarkBlock < 0 && !_o.selftestSeconds && _o.saveConfig.empty() &&
+        _o.pools.empty() && !_o.soloRequested)
         throw std::invalid_argument(
             "No pool configured: use --pool and --wallet, or --solo to mine on your own node");
 

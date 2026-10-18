@@ -93,6 +93,7 @@ struct Options
 
     // Misc
     int benchmarkBlock = -1;  // >= 0: simulation mode on this block
+    unsigned selftestSeconds = 0;  // > 0: run the GPU self-test for at most this long
     bool exitOnError = false;
     std::string saveConfig;  // write the configuration to this file and exit
 };

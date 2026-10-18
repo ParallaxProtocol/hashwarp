@@ -8,7 +8,8 @@ using namespace std::chrono;
 using namespace dev;
 using namespace eth;
 
-SimulateClient::SimulateClient(unsigned const& block) : PoolClient(), Worker("sim")
+SimulateClient::SimulateClient(unsigned const& block, double _difficulty)
+  : PoolClient(), Worker("sim"), m_difficulty(_difficulty)
 {
     m_block = block;
 }
@@ -35,7 +36,8 @@ void SimulateClient::disconnect()
 {
     cnote << "Simulation results : " << EthWhiteBold << "Max "
           << dev::getFormattedHashes((double)hr_max, ScaleSuffix::Add, 6) << " Mean "
-          << dev::getFormattedHashes((double)hr_mean, ScaleSuffix::Add, 6) << EthReset;
+          << dev::getFormattedHashes(hr_samples ? hr_sum / hr_samples : 0.0, ScaleSuffix::Add, 6)
+          << EthReset;
     
     m_conn->addDuration(m_session->duration());
     m_session = nullptr;
@@ -79,8 +81,6 @@ void SimulateClient::workLoop()
 {
     m_start_time = std::chrono::steady_clock::now();
 
-    // apply exponential sliding average
-    // ref: https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average
 
 
     WorkPackage current;
@@ -88,14 +88,18 @@ void SimulateClient::workLoop()
                                     // is calculated upon block number (see poolmanager)
     current.header = h256::random();
     current.block = m_block;
-    current.boundary = h256(dev::getTargetFromDiff(1));
+    current.boundary = h256(dev::getTargetFromDiff(m_difficulty));
     m_onWorkReceived(current);  // submit new fake job
 
     while (m_session)
     {
         float hr = Farm::f().HashRate();
         hr_max = std::max(hr_max, hr);
-        hr_mean = hr_alpha * hr_mean + (1.0f - hr_alpha) * hr;
+        if (hr > 0)
+        {
+            hr_sum += hr;
+            hr_samples++;
+        }
 
         this_thread::sleep_for(chrono::milliseconds(200));
     }

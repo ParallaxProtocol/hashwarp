@@ -33,6 +33,7 @@ struct PoolSettings
     unsigned connectionMaxRetries = 3;       // Max number of connection retries
     unsigned delayBeforeRetry = 5;           // Base delay seconds before connect retry (doubles up to 120)
     unsigned benchmarkBlock = 0;  // Block number used by SimulateClient to test performances
+    double simulationDifficulty = 1;  // Share difficulty of SimulateClient (1 = 2^32 hashes)
 };
 
 class PoolManager

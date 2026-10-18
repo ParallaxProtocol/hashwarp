@@ -732,9 +732,14 @@ void Farm::submitProof(Solution const& _s)
 
 void Farm::submitProofAsync(Solution const& _s)
 {
+    // Test hook (see Miner::faultInjectionPoint): a GPU returning wrong solutions
+    static const bool badSolutions = getenv("HASHWARP_FAULT_INJECTION") &&
+                                     std::string(getenv("HASHWARP_FAULT_INJECTION")) == "bad-solution";
+    uint64_t nonce = badSolutions ? _s.nonce + 1 : _s.nonce;
+
     if (!m_Settings.noEval)
     {
-        Result r = XHashAux::eval(_s.work.epoch, _s.work.header, _s.nonce);
+        Result r = XHashAux::eval(_s.work.epoch, _s.work.header, nonce);
         if (r.value > _s.work.boundary)
         {
             accountSolution(_s.midx, SolutionAccountingEnum::Failed);
