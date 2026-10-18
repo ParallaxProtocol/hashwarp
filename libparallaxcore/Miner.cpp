@@ -68,6 +68,9 @@ void Miner::pause(MinerPauseEnum what)
             m_epochInitFailureTime = std::chrono::steady_clock::now();
         }
     }
+    // A miner which failed to initialize an epoch keeps its work to retry
+    if (what != MinerPauseEnum::PauseDueToInsufficientMemory &&
+        what != MinerPauseEnum::PauseDueToInitEpochError)
     {
         boost::mutex::scoped_lock l(x_work);
         m_work.header = h256();
@@ -179,8 +182,63 @@ void Miner::TriggerHashRateUpdate() noexcept
     m_hashRate = 0.0;
 }
 
+void Miner::heartbeat() noexcept
+{
+    m_heartbeat.store(
+        std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+}
+
+bool Miner::unresponsive(std::chrono::seconds _timeout) const noexcept
+{
+    if (m_initializingEpoch.load(std::memory_order_relaxed))
+        return false;
+    auto last = std::chrono::steady_clock::time_point(
+        std::chrono::steady_clock::duration(m_heartbeat.load(std::memory_order_relaxed)));
+    return std::chrono::steady_clock::now() - last > _timeout;
+}
+
+void Miner::waitForWork()
+{
+    heartbeat();
+    boost::system_time const timeout = boost::get_system_time() + boost::posix_time::seconds(3);
+    boost::mutex::scoped_lock l(x_work);
+    m_new_work_signal.timed_wait(l, timeout);
+}
+
+void Miner::faultInjectionPoint()
+{
+    static const std::string fault = getenv("HASHWARP_FAULT_INJECTION") ?
+                                         getenv("HASHWARP_FAULT_INJECTION") :
+                                         "";
+    if (fault.empty())
+        return;
+    auto now = std::chrono::steady_clock::now();
+    if (m_faultInjectionStart == std::chrono::steady_clock::time_point())
+        m_faultInjectionStart = now;
+    if (now - m_faultInjectionStart < std::chrono::seconds(10))
+        return;
+    m_faultInjectionStart = {};
+    if (fault == "crash")
+        throw std::runtime_error("injected fault");
+    if (fault == "hang")
+        while (true)
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+}
+
 bool Miner::initEpoch()
 {
+    // DAG generation may take minutes (light cache on host): not a hang
+    m_initializingEpoch.store(true, std::memory_order_relaxed);
+    struct Done
+    {
+        Miner& m;
+        ~Done()
+        {
+            m.heartbeat();
+            m.m_initializingEpoch.store(false, std::memory_order_relaxed);
+        }
+    } done{*this};
+
     // When loading of DAG is sequential wait for
     // this instance to become current
     if (s_dagLoadMode == DAG_LOAD_MODE_SEQUENTIAL)
@@ -222,6 +280,7 @@ WorkPackage Miner::work() const
 
 void Miner::updateHashRate(uint32_t _groupSize, uint32_t _increment) noexcept
 {
+    heartbeat();
     m_groupCount += _increment;
     bool b = true;
     if (!m_hashRateUpdate.compare_exchange_strong(b, false))

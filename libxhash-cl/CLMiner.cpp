@@ -342,10 +342,7 @@ void CLMiner::workLoop()
             const WorkPackage w = work();
             if (!w)
             {
-                boost::system_time const timeout =
-                    boost::get_system_time() + boost::posix_time::seconds(3);
-                boost::mutex::scoped_lock l(x_work);
-                m_new_work_signal.timed_wait(l, timeout);
+                waitForWork();
                 continue;
             }
 
@@ -355,10 +352,7 @@ void CLMiner::workLoop()
                 {
                     if (!canInitEpoch(w.epoch))
                     {
-                        boost::system_time const timeout =
-                            boost::get_system_time() + boost::posix_time::seconds(3);
-                        boost::mutex::scoped_lock l(x_work);
-                        m_new_work_signal.timed_wait(l, timeout);
+                        waitForWork();
                         continue;
                     }
 
@@ -457,10 +451,7 @@ void CLMiner::workLoop()
                 current.startNonce = startNonce;
 
                 // Nothing left to search on this job: wait for a new one
-                boost::system_time const timeout =
-                    boost::get_system_time() + boost::posix_time::seconds(3);
-                boost::mutex::scoped_lock l(x_work);
-                m_new_work_signal.timed_wait(l, timeout);
+                waitForWork();
                 continue;
             }
 
@@ -473,6 +464,7 @@ void CLMiner::workLoop()
                 updateHashRate(m_settings.globalWorkSize, 1);
             else
                 updateHashRate(m_settings.localWorkSize, results.hashCount);
+            faultInjectionPoint();
         }
 
         if (m_queue.size())

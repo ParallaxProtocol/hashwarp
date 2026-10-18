@@ -67,6 +67,9 @@ struct Options
     std::vector<unsigned> memTempStop;    // per GPU, 0 = off
     std::vector<unsigned> memTempResume;  // per GPU
     unsigned shutdownTemp = 0;            // 0 = off
+    unsigned watchdogTimeout = 120;       // s, 0 = off
+    unsigned watchdogRestarts = 3;        // per GPU per hour
+    std::string watchdogScript;
 
     // Logging and display
     std::string logFile;

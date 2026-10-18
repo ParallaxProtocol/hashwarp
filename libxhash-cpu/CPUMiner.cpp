@@ -319,10 +319,7 @@ void CPUMiner::workLoop()
         const WorkPackage w = work();
         if (!w)
         {
-            boost::system_time const timeout =
-                boost::get_system_time() + boost::posix_time::seconds(3);
-            boost::mutex::scoped_lock l(x_work);
-            m_new_work_signal.timed_wait(l, timeout);
+            waitForWork();
             continue;
         }
 

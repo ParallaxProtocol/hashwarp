@@ -58,6 +58,9 @@ struct FarmSettings
     unsigned tempStart = 40;   // Temperature threshold to restart mining (if paused)
     unsigned tempStop = 0;     // Temperature threshold to pause mining (overheating)
     unsigned shutdownTemp = 0; // Stop hashwarp if a GPU (core, hotspot or memory) gets this hot
+    unsigned watchdogTimeout = 120;  // Seconds without sign of life before a GPU is hung (0 = off)
+    unsigned watchdogRestarts = 3;   // Restarts of a failed GPU per hour before giving up
+    std::string watchdogScript;      // Run (with GPU index and reason) when giving up
 };
 
 /**
@@ -266,6 +269,12 @@ private:
 
     // Pauses, resumes or stops on the temperature limits
     void checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& _sensors);
+
+    // Restarts GPUs whose work loop failed, gives up on hung or failing ones
+    void watchdog(Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now);
+    void watchdogGiveUp(int _minerIdx, const std::string& _reason, bool _hung);
+    std::map<int, std::deque<std::chrono::steady_clock::time_point>> m_minerRestarts;
+    bool m_watchdogGaveUp = false;
 
     /**
      * @brief Spawn a file - must be located in the directory of hashwarp binary

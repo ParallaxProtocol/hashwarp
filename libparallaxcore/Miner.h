@@ -451,6 +451,13 @@ public:
 
     void TriggerHashRateUpdate() noexcept;
 
+    /// Notes the miner's thread is alive (hashing or legitimately waiting)
+    void heartbeat() noexcept;
+
+    /// Whether the miner's thread gave no sign of life for _timeout,
+    /// not counting the time spent building DAGs
+    bool unresponsive(std::chrono::seconds _timeout) const noexcept;
+
 protected:
     /**
      * @brief Initializes miner's device.
@@ -481,6 +488,14 @@ protected:
     bool canInitEpoch(int _epoch);
 
     void updateHashRate(uint32_t _groupSize, uint32_t _increment) noexcept;
+
+    /// Waits up to 3 seconds to be kicked with new work
+    void waitForWork();
+
+    /// Test hook for the watchdog: with HASHWARP_FAULT_INJECTION=crash the work
+    /// loop throws after 10 seconds of hashing, with =hang it blocks forever.
+    /// Called by work loops after each batch
+    void faultInjectionPoint();
 
     static unsigned s_minersCount;   // Total Number of Miners
     static unsigned s_dagLoadMode;   // Way dag should be loaded
@@ -513,6 +528,11 @@ private:
 
     WorkPackage m_work;
     WorkPackage m_lastWork;  // Most recent work received, restored on resume
+
+    std::atomic<int64_t> m_heartbeat = {
+        std::chrono::steady_clock::now().time_since_epoch().count()};
+    std::atomic<bool> m_initializingEpoch = {false};
+    std::chrono::steady_clock::time_point m_faultInjectionStart = {};
 
     int m_failedEpoch = -1;
     std::chrono::steady_clock::time_point m_epochInitFailureTime;

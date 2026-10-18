@@ -59,6 +59,7 @@ using namespace dev::eth;
 // Global vars
 bool g_running = false;
 bool g_exitOnError = false;  // Whether or not hashwarp should exit on mining threads errors
+std::atomic<int> g_exitCode = {0};
 
 condition_variable g_shouldstop;
 boost::asio::io_service g_io_service;  // The IO service itself
@@ -287,6 +288,9 @@ public:
         if (m_opts.legacyHwmon >= 0)
             m_FarmSettings.hwMon = (unsigned)m_opts.legacyHwmon;
         m_FarmSettings.shutdownTemp = m_opts.shutdownTemp;
+        m_FarmSettings.watchdogTimeout = m_opts.watchdogTimeout;
+        m_FarmSettings.watchdogRestarts = m_opts.watchdogRestarts;
+        m_FarmSettings.watchdogScript = m_opts.watchdogScript;
         auto anySet = [](const std::vector<unsigned>& _v) {
             return std::any_of(_v.begin(), _v.end(), [](unsigned t) { return t != 0; });
         };
@@ -798,7 +802,7 @@ int main(int argc, char** argv)
 
             cli.execute();
             cout << endl << endl;
-            return 0;
+            return g_exitCode;
         }
         catch (std::invalid_argument& ex1)
         {

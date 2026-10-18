@@ -31,6 +31,11 @@
 
 extern bool g_exitOnError;
 
+/// Process exit code set by components which stop hashwarp (see hashwarp/main.cpp)
+extern std::atomic<int> g_exitCode;
+#define EXIT_CODE_WATCHDOG 5      // A GPU kept failing or hung
+#define EXIT_CODE_SHUTDOWN_TEMP 6  // A GPU reached --shutdown-temp
+
 namespace dev
 {
 enum class WorkerState
@@ -64,6 +69,16 @@ public:
     /// Whether or not this worker should stop
     bool shouldStop() const { return m_state != WorkerState::Started; }
 
+    /// Whether the work loop ended (failed) and the thread waits to be started again
+    bool isStopped() const { return m_state == WorkerState::Stopped; }
+
+    /// Message of the exception which ended the work loop last
+    std::string lastError() const
+    {
+        Guard l(x_work);
+        return m_lastError;
+    }
+
 private:
     virtual void workLoop() = 0;
 
@@ -72,6 +87,7 @@ private:
     mutable Mutex x_work;                 ///< Lock for the network existence.
     std::unique_ptr<std::thread> m_work;  ///< The network thread.
     std::atomic<WorkerState> m_state = {WorkerState::Starting};
+    std::string m_lastError;  ///< Guarded by x_work
 };
 
 }  // namespace dev

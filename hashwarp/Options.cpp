@@ -372,8 +372,21 @@ void registerOptions(CLI::App& _app, Options& _o)
         ->delimiter(',')
         ->group(c_groupHardware);
     _app.add_option("--shutdown-temp", _o.shutdownTemp,
-            "Stop hashwarp if any GPU temperature reaches this in C (default off)")
+            "Stop hashwarp (exit code 6) if any GPU temperature reaches this in C (default off)")
         ->check(CLI::Range(0, 125))
+        ->group(c_groupHardware);
+    _app.add_option("--watchdog-timeout", _o.watchdogTimeout,
+            "Seconds a GPU may give no sign of life before hashwarp exits (code 5) so it can "
+            "be restarted (0 = no watchdog)")
+        ->check(CLI::Range(0, 3600))
+        ->group(c_groupHardware);
+    _app.add_option("--watchdog-restarts", _o.watchdogRestarts,
+            "Times per hour a failed GPU is restarted before hashwarp exits (code 5)")
+        ->check(CLI::Range(0, 100))
+        ->group(c_groupHardware);
+    _app.add_option("--watchdog-script", _o.watchdogScript,
+            "Run this program (with the GPU index and the reason) when the watchdog gives up, "
+            "e.g. to reboot the rig")
         ->group(c_groupHardware);
 
     // Logging and display
@@ -487,6 +500,8 @@ std::vector<std::string> validateOptions(Options& _o)
         if (stop && resume && resume >= stop)
             throw std::invalid_argument("--mem-temp-resume must be lower than --mem-temp-stop");
     }
+    if (_o.watchdogTimeout && _o.watchdogTimeout < 30)
+        throw std::invalid_argument("--watchdog-timeout must be at least 30 seconds (or 0)");
     if (_o.shutdownTemp && _o.shutdownTemp < 50)
         throw std::invalid_argument("--shutdown-temp must be at least 50");
 

@@ -364,6 +364,7 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
     {
         cerror << "GPU " << _minerIdx << " reached " << hottest << "C (--shutdown-temp "
                << m_Settings.shutdownTemp << "). Stopping hashwarp";
+        g_exitCode = EXIT_CODE_SHUTDOWN_TEMP;
         raise(SIGTERM);
         return;
     }
@@ -401,6 +402,71 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
             _miner.resume(MinerPauseEnum::PauseDueToOverHeating);
         }
     }
+}
+
+void Farm::watchdog(Miner& _miner, int _minerIdx, std::chrono::steady_clock::time_point _now)
+{
+    if (m_watchdogGaveUp)
+        return;
+
+    if (_miner.isStopped())
+    {
+        // The work loop ended with an error: start it again, unless it keeps failing
+        auto& restarts = m_minerRestarts[_minerIdx];
+        while (!restarts.empty() && _now - restarts.front() > std::chrono::hours(1))
+            restarts.pop_front();
+        std::string reason = _miner.lastError();
+        if (reason.empty())
+            reason = "device initialization failed";
+        if (restarts.size() >= m_Settings.watchdogRestarts)
+        {
+            cerror << "GPU " << _minerIdx << " failed " << restarts.size() + 1
+                   << " times in the last hour: " << reason;
+            watchdogGiveUp(_minerIdx, reason, false);
+            return;
+        }
+        restarts.push_back(_now);
+        cwarn << "GPU " << _minerIdx << " stopped (" << reason << "). Restarting it ("
+              << restarts.size() << "/" << m_Settings.watchdogRestarts << " in the last hour)";
+        _miner.heartbeat();
+        _miner.startWorking();
+        return;
+    }
+
+    if (_miner.unresponsive(std::chrono::seconds(m_Settings.watchdogTimeout)))
+    {
+        cerror << "GPU " << _minerIdx << " gave no sign of life for "
+               << m_Settings.watchdogTimeout << " seconds (GPU or driver hang)";
+        watchdogGiveUp(_minerIdx, "hung", true);
+    }
+}
+
+void Farm::watchdogGiveUp(int _minerIdx, const std::string& _reason, bool _hung)
+{
+    m_watchdogGaveUp = true;
+    g_exitCode = EXIT_CODE_WATCHDOG;
+    if (!m_Settings.watchdogScript.empty())
+    {
+        cwarn << "Running watchdog script " << m_Settings.watchdogScript;
+        try
+        {
+            boost::process::spawn(
+                m_Settings.watchdogScript, std::to_string(_minerIdx), _reason);
+        }
+        catch (const std::exception& ex)
+        {
+            cerror << "Can't run " << m_Settings.watchdogScript << ": " << ex.what();
+        }
+    }
+
+    // A hung GPU blocks its thread in the driver: a clean shutdown would hang too
+    if (_hung)
+    {
+        cerror << "Exiting (code " << EXIT_CODE_WATCHDOG << ")";
+        std::_Exit(EXIT_CODE_WATCHDOG);
+    }
+    cerror << "Stopping hashwarp (exit code " << EXIT_CODE_WATCHDOG << ")";
+    raise(SIGTERM);
 }
 
 void Farm::pruneSamples(std::deque<Sample>& _samples, std::chrono::steady_clock::time_point _now)
@@ -733,6 +799,9 @@ void Farm::collectData(const boost::system::error_code& ec)
             checkTemperatures(*miner, minerIdx, sensors);
             m_telemetry.miners.at(minerIdx).sensors = sensors;
         }
+
+        if (m_Settings.watchdogTimeout && m_isMining.load(std::memory_order_relaxed))
+            watchdog(*miner, minerIdx, now);
         m_telemetry.farm.hashrate = farm_hr;
     }
 

@@ -78,6 +78,10 @@ bool CUDAMiner::initDevice()
     {
         CUDA_SAFE_CALL(cudaSetDevice(m_deviceDescriptor.cuDeviceIndex));
         CUDA_SAFE_CALL(cudaDeviceReset());
+
+        // The reset freed everything: nothing to reuse (e.g. when restarted by the watchdog)
+        m_allocated_memory_dag = 0;
+        m_allocated_memory_light_cache = 0;
     }
     catch (const cuda_runtime_error& ec)
     {
@@ -202,6 +206,9 @@ bool CUDAMiner::initEpoch_internal()
         cudalog << "Unexpected error " << ec.what() << " on CUDA device "
                 << m_deviceDescriptor.uniqueId;
         cudalog << "Mining suspended ...";
+        // Start from a clean device on the next attempt
+        m_allocated_memory_dag = 0;
+        m_allocated_memory_light_cache = 0;
         pause(MinerPauseEnum::PauseDueToInitEpochError);
         retVar = true;
     }
@@ -230,10 +237,7 @@ void CUDAMiner::workLoop()
             const WorkPackage w = work();
             if (!w)
             {
-                boost::system_time const timeout =
-                    boost::get_system_time() + boost::posix_time::seconds(3);
-                boost::mutex::scoped_lock l(x_work);
-                m_new_work_signal.timed_wait(l, timeout);
+                waitForWork();
                 continue;
             }
 
@@ -242,10 +246,7 @@ void CUDAMiner::workLoop()
             {
                 if (!canInitEpoch(w.epoch))
                 {
-                    boost::system_time const timeout =
-                        boost::get_system_time() + boost::posix_time::seconds(3);
-                    boost::mutex::scoped_lock l(x_work);
-                    m_new_work_signal.timed_wait(l, timeout);
+                    waitForWork();
                     continue;
                 }
 
@@ -280,10 +281,7 @@ void CUDAMiner::workLoop()
             if (exhausted)
             {
                 // Nothing left to search on this job: wait for a new one
-                boost::system_time const timeout =
-                    boost::get_system_time() + boost::posix_time::seconds(3);
-                boost::mutex::scoped_lock l(x_work);
-                m_new_work_signal.timed_wait(l, timeout);
+                waitForWork();
                 continue;
             }
 
@@ -502,6 +500,7 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
 
         // Update the hash rate
         updateHashRate(m_batch_size, completed);
+        faultInjectionPoint();
     }
 
     // Ran out of nonces without being asked to switch
