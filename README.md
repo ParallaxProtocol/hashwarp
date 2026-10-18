@@ -1,7 +1,7 @@
 # Hashwarp
 
-[![Releases](https://img.shields.io/github/downloads/microstack-tech/hashwarp/total.svg)][Releases]
-[![Build](https://github.com/microstack-tech/hashwarp/actions/workflows/build.yml/badge.svg?branch=main)][Build]
+[![Releases](https://img.shields.io/github/downloads/ParallaxProtocol/hashwarp/total.svg)][Releases]
+[![Build](https://github.com/ParallaxProtocol/hashwarp/actions/workflows/build.yml/badge.svg?branch=main)][Build]
 
 > The official GPU miner for [Parallax](https://parallaxprotocol.org) (XHash): open source, no fee.
 
@@ -129,5 +129,5 @@ See [docs/BUILD.md](docs/BUILD.md). Builds of the `main` branch are attached to 
 Licensed under the [GNU General Public License, Version 3](LICENSE). Hashwarp started as a fork of
 [ethminer](https://github.com/ethereum-mining/ethminer).
 
-[Build]: https://github.com/microstack-tech/hashwarp/actions/workflows/build.yml
-[Releases]: https://github.com/microstack-tech/hashwarp/releases
+[Build]: https://github.com/ParallaxProtocol/hashwarp/actions/workflows/build.yml
+[Releases]: https://github.com/ParallaxProtocol/hashwarp/releases

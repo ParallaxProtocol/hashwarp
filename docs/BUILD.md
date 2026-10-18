@@ -34,7 +34,7 @@ dependencies (Boost, OpenSSL, jsoncpp, CLI11, the OpenCL loader) with [Hunter].
 1. Get the sources with their submodules:
 
     ```shell
-    git clone --recursive https://github.com/microstack-tech/hashwarp.git
+    git clone --recursive https://github.com/ParallaxProtocol/hashwarp.git
     cd hashwarp
     ```
 

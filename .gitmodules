@@ -7,4 +7,4 @@
 	branch = master
 [submodule "cmake/xhash"]
 	path = cmake/xhash
-	url = https://github.com/microstack-tech/xhash
+	url = https://github.com/ParallaxProtocol/xhash

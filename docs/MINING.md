@@ -171,7 +171,7 @@ through hashwarp's API, on 127.0.0.1 only.
 **HiveOS**: in the flight sheet choose the **Custom** miner, then
 
 * Miner name: `hashwarp`
-* Installation URL: the download URL of `hashwarp-<version>.tar.gz` from [Releases](https://github.com/microstack-tech/hashwarp/releases)
+* Installation URL: the download URL of `hashwarp-<version>.tar.gz` from [Releases](https://github.com/ParallaxProtocol/hashwarp/releases)
 * Hash algorithm: `xhash`
 * Wallet and worker template: `%WAL%.%WORKER_NAME%`
 * Pool URL: `pool.example.com:3333`, or several separated by spaces for failover
