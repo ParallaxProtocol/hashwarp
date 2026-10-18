@@ -11,6 +11,16 @@
 
 using boost::asio::ip::tcp;
 
+namespace
+{
+// What pools see: Hashwarp/<version>, without the commit the build info carries
+std::string agent()
+{
+    std::string version = hashwarp_get_buildinfo()->project_version;
+    return "Hashwarp/" + version.substr(0, version.find('+'));
+}
+}  // namespace
+
 EthStratumClient::EthStratumClient(int worktimeout, int responsetimeout)
   : PoolClient(),
     m_worktimeout(worktimeout),
@@ -648,7 +658,7 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
 
     case EthStratumClient::ETHEREUMSTRATUM:
 
-        jReq["params"].append(hashwarp_get_buildinfo()->project_name_with_version);
+        jReq["params"].append(agent());
         jReq["params"].append("EthereumStratum/1.0.0");
 
         break;
@@ -657,7 +667,7 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
 
         jReq["method"] = "mining.hello";
         Json::Value jPrm;
-        jPrm["agent"] = hashwarp_get_buildinfo()->project_name_with_version;
+        jPrm["agent"] = agent();
         jPrm["host"] = m_conn->Host();
         jPrm["port"] = toCompactHex((uint32_t)m_conn->Port(), HexPrefix::DontAdd);
         jPrm["proto"] = "EthereumStratum/2.0.0";
@@ -1549,7 +1559,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
         else if (_method == "client.get_version")
         {
             jReq["id"] = _id;
-            jReq["result"] = hashwarp_get_buildinfo()->project_name_with_version;
+            jReq["result"] = agent();
 
             if (_rpcVer == 1)
             {
