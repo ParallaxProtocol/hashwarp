@@ -308,7 +308,7 @@ public:
 
 #endif
 
-#if ETH_XHASHCL || ETH_XHASHCUDA || ETH_XHASH_CPU
+#if ETH_XHASHCL || ETH_XHASHCUDA || ETH_XHASHCPU
 
         app.add_flag("--list-devices", m_shouldListDevices, "");
 
@@ -489,7 +489,7 @@ public:
             m_FarmSettings.hwMon = std::max((unsigned int)m_FarmSettings.hwMon, 1U);
             if (m_FarmSettings.tempStop <= m_FarmSettings.tempStart)
             {
-                std::string what = "-tstop must be greater than -tstart";
+                std::string what = "--tstop must be greater than --tstart";
                 throw std::invalid_argument(what);
             }
         }
@@ -939,8 +939,6 @@ public:
                  << "                        eg --cu-devices 0 2 3" << endl
                  << "                        If not set all available CUDA devices will be used"
                  << endl
-                 << "    --cu-parallel-hash  UINT {1,2,4,8} Default = 4" << endl
-                 << "                        Set the number of hashes per kernel" << endl
                  << "    --cu-streams        INT [1 .. 99] Default = 2" << endl
                  << "                        Set the number of streams per GPU" << endl
                  << "    --cu-schedule       TEXT Default = 'sync'" << endl
@@ -994,7 +992,7 @@ public:
                  << endl
                  << "    --display-interval  INT[1 .. 1800] Default = 5" << endl
                  << "                        Statistic display interval in seconds" << endl
-                 << "    --farm-recheck      INT[1 .. 99999] Default = 500" << endl
+                 << "    --farm-recheck      INT[1 .. 99999] Default = 1000" << endl
                  << "                        Set polling interval for new work in getWork mode"
                  << endl
                  << "                        Value expressed in milliseconds" << endl
@@ -1014,7 +1012,7 @@ public:
                  << "                        reconnect to the primary (the first) connection."
                  << endl
                  << "                        before switching to a fail-over connection" << endl
-                 << "    --work-timeout      INT[180 .. 99999] Default = 180" << endl
+                 << "    --work-timeout      INT[7200 .. 99999] Default = 7200" << endl
                  << "                        If no new work received from pool after this" << endl
                  << "                        amount of time the connection is dropped" << endl
                  << "                        Value expressed in seconds." << endl
@@ -1054,24 +1052,24 @@ public:
                  << "    --list-devices      FLAG Lists the detected OpenCL/CUDA devices and "
                     "exits"
                  << endl
-                 << "                        Must be combined with -G or -U or -X flags" << endl
+                 << "                        Must be combined with -G or -U flags" << endl
                  << "    -L,--dag-load-mode  INT[0 .. 1] Default = 0" << endl
                  << "                        Set DAG load mode. Can be one of:" << endl
                  << "                        0 Parallel load mode (each GPU independently)" << endl
                  << "                        1 Sequential load mode (one GPU after another)" << endl
                  << endl
-                 << "    --tstart            UINT[30 .. 100] Default = 0" << endl
+                 << "    --tstop             UINT[30 .. 100] Default = 0" << endl
                  << "                        Suspend mining on GPU which temperature is above"
                  << endl
                  << "                        this threshold. Implies --HWMON 1" << endl
                  << "                        If not set or zero no temp control is performed"
                  << endl
-                 << "    --tstop             UINT[30 .. 100] Default = 40" << endl
+                 << "    --tstart            UINT[30 .. 100] Default = 40" << endl
                  << "                        Resume mining on previously overheated GPU when "
                     "temp"
                  << endl
                  << "                        drops below this threshold. Implies --HWMON 1" << endl
-                 << "                        Must be lower than --tstart" << endl
+                 << "                        Must be lower than --tstop" << endl
                  << "    -v,--verbosity      INT[0 .. 255] Default = 0 " << endl
                  << "                        Set output verbosity level. Use the sum of :" << endl
                  << "                        1   to log stratum json messages" << endl
