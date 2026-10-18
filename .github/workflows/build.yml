@@ -34,16 +34,21 @@ jobs:
             python3-pip ca-certificates mesa-common-dev
           pip3 install -q cmake==3.31.6
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
 
+      # Hunter's packages change with its configuration and the xhash submodule
+      - name: Hunter cache key
+        id: hunter
+        run: echo "xhash=$(git rev-parse HEAD:cmake/xhash)" >> "$GITHUB_OUTPUT"
+
       - name: Hunter cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /hunter
-          key: hunter-linux-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/**', 'cmake/xhash/**') }}
+          key: hunter-linux-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/config.cmake') }}-${{ steps.hunter.outputs.xhash }}
           restore-keys: hunter-linux-
 
       - name: Configure
@@ -69,7 +74,7 @@ jobs:
           [ "$(printf '%s\n' "$glibc" GLIBC_2.28 | sort -V | tail -1)" = GLIBC_2.28 ]
           ! objdump -p build/hashwarp/hashwarp | grep NEEDED | grep -E 'libstdc|libgcc_s|libssl|libcrypto|libcudart'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hashwarp-linux
           path: |
@@ -83,14 +88,14 @@ jobs:
     env:
       HUNTER_ROOT: C:\hunter
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0
 
       - name: CUDA installer cache
         id: cuda-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: C:\cuda-installer
           key: cuda-installer-${{ env.CUDA_VERSION }}
@@ -114,11 +119,15 @@ jobs:
           "CUDA_PATH=$cuda" | Out-File -Append $env:GITHUB_ENV
           "$cuda\bin" | Out-File -Append $env:GITHUB_PATH
 
+      - name: Hunter cache key
+        id: hunter
+        run: '"xhash=$(git rev-parse HEAD:cmake/xhash)" >> $env:GITHUB_OUTPUT'
+
       - name: Hunter cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: C:\hunter
-          key: hunter-windows-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/**', 'cmake/xhash/**') }}
+          key: hunter-windows-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/config.cmake') }}-${{ steps.hunter.outputs.xhash }}
           restore-keys: hunter-windows-
 
       - name: MSVC environment
@@ -144,7 +153,7 @@ jobs:
       - name: Package
         run: cmake --build build --target package
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: hashwarp-windows
           path: |
@@ -159,7 +168,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check the tag against the project version
         run: |
@@ -167,7 +176,7 @@ jobs:
           [ "$GITHUB_REF_NAME" = "v$version" ] || {
             echo "tag $GITHUB_REF_NAME does not match PROJECT_VERSION $version"; exit 1; }
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
