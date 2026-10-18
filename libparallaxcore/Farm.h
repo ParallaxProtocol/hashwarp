@@ -38,6 +38,7 @@
 
 #include <libparallaxcore/Miner.h>
 
+#include <libhwmon/GpuControl.h>
 #include <libhwmon/wrapnvml.h>
 #if defined(__linux)
 #include <libhwmon/wrapamdsysfs.h>
@@ -166,6 +167,18 @@ public:
     /**
      * @brief Gets the pointer to a miner instance
      */
+    /**
+     * @brief Overclocking control of a GPU, created on first use. nullptr, with
+     * _error set, if the GPU can't be controlled
+     */
+    dev::GpuControl* gpuControl(const DeviceDescriptor& _device, std::string& _error);
+
+    /**
+     * @brief Puts back every value changed through gpuControl(). Safe to call more
+     * than once and from exit handlers
+     */
+    void restoreOc();
+
     std::shared_ptr<Miner> getMiner(unsigned index)
     {
         try
@@ -360,6 +373,16 @@ private:
     wrap_adl_handle* adlh = nullptr;
     std::map<string, int> map_adl_handle = {};
 #endif
+
+    // Creates the monitoring library handles and their PCI id mappings
+    void initNvml();
+#if defined(__linux)
+    void initSysfs();
+#endif
+
+    // Overclocking controls by PCI id
+    std::mutex x_oc;
+    std::map<std::string, std::unique_ptr<dev::GpuControl>> m_oc;
 
     static Farm* m_this;
     std::map<std::string, DeviceDescriptor>& m_DevicesCollection;

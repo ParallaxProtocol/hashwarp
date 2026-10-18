@@ -95,22 +95,7 @@ Farm::Farm(std::map<std::string, DeviceDescriptor>& _DevicesCollection, FarmSett
 
 #if defined(__linux)
         if (need_sysfsh)
-            sysfsh = wrap_amdsysfs_create();
-        if (sysfsh)
-        {
-            // Build Pci identification mapping as done in miners.
-            for (int i = 0; i < sysfsh->sysfs_gpucount; i++)
-            {
-                std::ostringstream oss;
-                std::string uniqueId;
-                oss << std::setfill('0') << std::setw(2) << std::hex
-                    << (unsigned int)sysfsh->sysfs_pci_bus_id[i] << ":" << std::setw(2)
-                    << (unsigned int)(sysfsh->sysfs_pci_device_id[i]) << ".0";
-                uniqueId = oss.str();
-                map_amdsysfs_handle[uniqueId] = i;
-            }
-        }
-
+            initSysfs();
 #else
         if (need_adlh)
             adlh = wrap_adl_create();
@@ -133,21 +118,7 @@ Farm::Farm(std::map<std::string, DeviceDescriptor>& _DevicesCollection, FarmSett
 
 #endif
         if (need_nvmlh)
-            nvmlh = wrap_nvml_create();
-        if (nvmlh)
-        {
-            // Build Pci identification as done in miners.
-            for (int i = 0; i < nvmlh->nvml_gpucount; i++)
-            {
-                std::ostringstream oss;
-                std::string uniqueId;
-                oss << std::setfill('0') << std::setw(2) << std::hex
-                    << (unsigned int)nvmlh->nvml_pci_bus_id[i] << ":" << std::setw(2)
-                    << (unsigned int)(nvmlh->nvml_pci_device_id[i]) << ".0";
-                uniqueId = oss.str();
-                map_nvml_handle[uniqueId] = i;
-            }
-        }
+            initNvml();
     }
 
     // Initialize nonce_scrambler
@@ -183,6 +154,9 @@ Farm::~Farm()
         m_hangWatchdogStop.notify_all();
         m_hangWatchdog.join();
     }
+
+    restoreOc();
+    m_oc.clear();
 
     // Deinit HWMON
 #if defined(__linux)
@@ -286,6 +260,96 @@ unsigned Farm::nonceSegmentWidth(unsigned _exSizeHexChars, size_t _miners, unsig
     if (!_exSizeHexChars && _userWidth && _userWidth < width)
         width = _userWidth;
     return width;
+}
+
+namespace
+{
+// PCI id as in the device descriptors: bus:device.0
+std::string pciId(unsigned _bus, unsigned _device)
+{
+    std::ostringstream oss;
+    oss << std::setfill('0') << std::setw(2) << std::hex << _bus << ":" << std::setw(2) << _device
+        << ".0";
+    return oss.str();
+}
+}  // namespace
+
+void Farm::initNvml()
+{
+    if (nvmlh)
+        return;
+    nvmlh = wrap_nvml_create();
+    if (nvmlh)
+        for (int i = 0; i < nvmlh->nvml_gpucount; i++)
+            map_nvml_handle[pciId(nvmlh->nvml_pci_bus_id[i], nvmlh->nvml_pci_device_id[i])] = i;
+}
+
+#if defined(__linux)
+void Farm::initSysfs()
+{
+    if (sysfsh)
+        return;
+    sysfsh = wrap_amdsysfs_create();
+    if (sysfsh)
+        for (int i = 0; i < sysfsh->sysfs_gpucount; i++)
+            map_amdsysfs_handle[pciId(sysfsh->sysfs_pci_bus_id[i], sysfsh->sysfs_pci_device_id[i])] =
+                i;
+}
+#endif
+
+dev::GpuControl* Farm::gpuControl(const DeviceDescriptor& _device, std::string& _error)
+{
+    std::lock_guard<std::mutex> l(x_oc);
+    auto it = m_oc.find(_device.uniqueId);
+    if (it != m_oc.end())
+        return it->second.get();
+
+    bool nvidia = _device.subscriptionType == DeviceSubscriptionTypeEnum::Cuda ||
+                  (_device.subscriptionType == DeviceSubscriptionTypeEnum::OpenCL &&
+                      _device.clPlatformType == ClPlatformTypeEnum::Nvidia);
+    bool amd = _device.subscriptionType == DeviceSubscriptionTypeEnum::OpenCL &&
+               _device.clPlatformType == ClPlatformTypeEnum::Amd;
+    std::unique_ptr<dev::GpuControl> control;
+    if (nvidia)
+    {
+        initNvml();
+        auto idx = map_nvml_handle.find(_device.uniqueId);
+        if (!nvmlh)
+            _error = "NVML is not available";
+        else if (idx == map_nvml_handle.end())
+            _error = "NVML doesn't list this GPU";
+        else
+            control = dev::GpuControl::nvml(nvmlh, idx->second);
+    }
+    else if (amd)
+    {
+#if defined(__linux)
+        initSysfs();
+        auto idx = map_amdsysfs_handle.find(_device.uniqueId);
+        if (!sysfsh || idx == map_amdsysfs_handle.end())
+            _error = "the amdgpu driver doesn't list this GPU";
+        else
+            control = dev::GpuControl::amd(sysfsh, idx->second);
+#else
+        _error = "overclocking AMD GPUs is only supported on Linux";
+#endif
+    }
+    else
+        _error = "overclocking is only supported on NVIDIA and AMD GPUs";
+    if (!control)
+        return nullptr;
+    return (m_oc[_device.uniqueId] = std::move(control)).get();
+}
+
+void Farm::restoreOc()
+{
+    std::lock_guard<std::mutex> l(x_oc);
+    for (auto& oc : m_oc)
+        if (oc.second->changed())
+        {
+            oc.second->restore();
+            cnote << "Restored the clocks, power limit and fans of " << oc.first;
+        }
 }
 
 HwSensorsType Farm::readSensors(Miner& _miner)

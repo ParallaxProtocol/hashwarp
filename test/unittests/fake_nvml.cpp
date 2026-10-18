@@ -3,6 +3,8 @@
 
 #include "fake_nvml.h"
 
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace
@@ -10,9 +12,17 @@ namespace
 FakeNvmlState g_state;
 int g_device;  // its handle
 
+// FAKE_NVML_LOG prints the changes, FAKE_NVML_DENY refuses them, to try hashwarp with it
 int denied()
 {
-    return g_state.denyWrites ? 4 /* NVML_ERROR_NO_PERMISSION */ : 0;
+    return (g_state.denyWrites || getenv("FAKE_NVML_DENY")) ? 4 /* NVML_ERROR_NO_PERMISSION */ :
+                                                              0;
+}
+
+void log(const char* _what, long _value)
+{
+    if (getenv("FAKE_NVML_LOG"))
+        fprintf(stderr, "fake-nvml: %s %ld\n", _what, _value);
 }
 }  // namespace
 
@@ -108,6 +118,7 @@ int nvmlDeviceSetPowerManagementLimit(void*, unsigned _mw)
     if (_mw < 100000 || _mw > 400000)
         return 2;  // NVML_ERROR_INVALID_ARGUMENT
     g_state.powerMw = _mw;
+    log("power limit mW", _mw);
     return 0;
 }
 
@@ -117,6 +128,7 @@ int nvmlDeviceSetGpuLockedClocks(void*, unsigned _min, unsigned _max)
         return denied();
     g_state.lockedMin = _min;
     g_state.lockedMax = _max;
+    log("locked core clock", _max);
     return 0;
 }
 int nvmlDeviceResetGpuLockedClocks(void*)
@@ -124,6 +136,7 @@ int nvmlDeviceResetGpuLockedClocks(void*)
     if (denied())
         return denied();
     g_state.lockedMin = g_state.lockedMax = 0;
+    log("locked core clock", 0);
     return 0;
 }
 
@@ -153,6 +166,7 @@ int nvmlDeviceSetClockOffsets(void*, ClockOffset* _info)
     if (_info->version != (sizeof(ClockOffset) | (1u << 24)) || _info->pstate != 0)
         return 2;
     (_info->type == 2 ? g_state.memOffset : g_state.coreOffset) = _info->offset;
+    log(_info->type == 2 ? "mem offset" : "core offset", _info->offset);
     g_state.newOffsetCalls++;
     return 0;
 }
@@ -203,6 +217,7 @@ int nvmlDeviceSetFanSpeed_v2(void*, unsigned _fan, unsigned _pct)
     if (denied())
         return denied();
     g_state.fanPct = _pct;
+    log("fan", _pct);
     g_state.fanManual[_fan] = true;
     return 0;
 }
@@ -211,6 +226,7 @@ int nvmlDeviceSetDefaultFanSpeed_v2(void*, unsigned _fan)
     if (denied())
         return denied();
     g_state.fanManual[_fan] = false;
+    log("fan auto", _fan);
     return 0;
 }
 }

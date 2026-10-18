@@ -44,6 +44,7 @@
 
 #include "Console.h"
 #include "Hotkeys.h"
+#include "Oc.h"
 #include "Options.h"
 #include "Wizard.h"
 
@@ -505,12 +506,66 @@ public:
 
         // Initialize Farm
         new Farm(m_DevicesCollection, m_FarmSettings, m_CUSettings, m_CLSettings, m_CPSettings);
+        applyOc();
 
         // Run Miner
         doMiner();
+        Farm::f().restoreOc();
     }
 
 private:
+    // Sets the overclocking of the GPUs before mining starts
+    void applyOc()
+    {
+        if (m_ocRequests.empty())
+            return;
+        // Also when hashwarp exits otherwise (and the watchdog gives up on a hung GPU,
+        // which may well be the overclocking's fault)
+        std::atexit([]() { Farm::f().restoreOc(); });
+        std::at_quick_exit([]() { Farm::f().restoreOc(); });
+
+        hashwarp::TuneResults tuned;
+        std::string tuneFile = hashwarp::tuneFilePath(m_opts);
+        try
+        {
+            tuned = hashwarp::loadTuneResults(tuneFile);
+        }
+        catch (const std::exception& ex)
+        {
+            cwarn << ex.what();
+        }
+        for (const auto& r : m_ocRequests)
+        {
+            const DeviceDescriptor& d = m_DevicesCollection.at(r.uniqueId);
+            std::string gpu = "GPU " + std::to_string(r.gpu) + " " + d.name;
+            std::string error;
+            dev::GpuControl* control = Farm::f().gpuControl(d, error);
+            if (!control)
+            {
+                cwarn << gpu << ": can't overclock, " << error;
+                continue;
+            }
+            dev::OcSettings s;
+            std::string note;
+            if (!r.request.gpuProfile.empty())
+            {
+                auto profile = hashwarp::gpuProfile(
+                    r.request.gpuProfile, tuned, control->id(), control->limits(), note);
+                if (!profile)
+                    cwarn << gpu << ": profile " << r.request.gpuProfile << " " << note;
+                else
+                    s = *profile;
+            }
+            s.merge(r.request.settings);
+            if (s.empty())
+                continue;
+            auto errors = control->apply(s);
+            cnote << gpu << ": " << s.str() << (note.empty() ? "" : " (" + note + ")");
+            for (const auto& e : errors)
+                cwarn << gpu << ": " << e;
+        }
+    }
+
     void applyLogging()
     {
         g_logLevel = dev::parseLogLevel(m_opts.logLevel);
@@ -693,6 +748,10 @@ private:
             s.memTempResume = hashwarp::perGpu(m_opts.memTempResume, k);
             if (s.memTempStop && !s.memTempResume)
                 s.memTempResume = s.memTempStop - 10;
+
+            auto oc = hashwarp::ocRequest(m_opts, k);
+            if (!oc.empty())
+                m_ocRequests.push_back({selected[k], d.uniqueId, oc});
         }
 
         // Count of subscribed devices
@@ -844,6 +903,15 @@ private:
                                                     // multithreaded environment
 
     hashwarp::Options m_opts;  // Options from the command line and configuration file
+
+    // Overclocking of the selected GPUs
+    struct OcGpu
+    {
+        unsigned gpu;  // index of --list-devices
+        std::string uniqueId;
+        hashwarp::OcRequest request;
+    };
+    std::vector<OcGpu> m_ocRequests;
     std::chrono::steady_clock::time_point m_lastStats = std::chrono::steady_clock::now();
 
     // Physical Mining Devices descriptor

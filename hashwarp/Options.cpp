@@ -2,6 +2,7 @@
 // Licensed under GNU General Public License, Version 3. See the LICENSE file.
 
 #include "Options.h"
+#include "Oc.h"
 
 #include <libdevcore/Log.h>
 #include <libpoolprotocols/PoolURI.h>
@@ -29,6 +30,7 @@ const char* const c_groupPool = "Pool";
 const char* const c_groupDevices = "Devices";
 const char* const c_groupTuning = "Tuning (per GPU lists: one value per GPU, or one for all)";
 const char* const c_groupHardware = "Hardware";
+const char* const c_groupOc = "Overclocking (per GPU lists, x leaves a GPU alone; needs root or administrator rights)";
 const char* const c_groupLogging = "Logging and display";
 const char* const c_groupApi = "API";
 const char* const c_groupMisc = "Other";
@@ -39,7 +41,7 @@ const std::map<std::string, unsigned> c_debugCategories = {{"json", LOG_JSON},
 
 // Options which are never written to a configuration file
 const std::set<std::string> c_notSaved = {"help", "help-all", "version", "config", "save-config",
-    "list-devices", "benchmark", "selftest"};
+    "list-devices", "benchmark", "selftest", "oc-tune"};
 
 bool isInteger(const std::string& _s)
 {
@@ -89,6 +91,17 @@ public:
                     continue;
                 values = {opt->get_default_str()};
             }
+            if (name == "oc-profiles")
+            {
+                // Written as the object it is
+                Json::CharReaderBuilder reader;
+                std::string errors;
+                std::istringstream in(values.back());
+                Json::Value profiles;
+                if (Json::parseFromStream(reader, in, &profiles, &errors))
+                    root[name] = profiles;
+                continue;
+            }
             if (opt->get_items_expected_max() > 1)
             {
                 Json::Value arr(Json::arrayValue);
@@ -134,7 +147,14 @@ public:
             const Json::Value& v = root[name];
             CLI::ConfigItem item;
             item.name = name;
-            if (v.isArray())
+            if (v.isObject())
+            {
+                // oc-profiles: the option takes the object as JSON text
+                Json::StreamWriterBuilder writer;
+                writer["indentation"] = "";
+                item.inputs.push_back(Json::writeString(writer, v));
+            }
+            else if (v.isArray())
             {
                 for (const auto& e : v)
                     item.inputs.push_back(scalar(name, e));
@@ -397,6 +417,48 @@ void registerOptions(CLI::App& _app, Options& _o)
             "e.g. to reboot the rig")
         ->group(c_groupHardware);
 
+    // Overclocking
+    _app.add_option("--oc-profile", _o.ocProfile,
+            "Overclocking profile: stock, efficient (the tuned core clock, or 80% power), tuned "
+            "(the --oc-tune results) or one of oc-profiles in the configuration file")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-core-clock", _o.ocCoreClock,
+            "Core clock in MHz: locked on NVIDIA, highest state on AMD (0 = default)")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-core-offset", _o.ocCoreOffset, "Core clock offset in MHz (NVIDIA)")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-mem-offset", _o.ocMemOffset,
+            "Memory clock offset in MHz (NVIDIA), in the units of nvidia-settings and HiveOS: "
+            "twice MSI Afterburner's")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-mem-clock", _o.ocMemClock,
+            "Memory clock in MHz of the highest state (AMD, 0 = default)")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-power", _o.ocPower, "Power limit in W, or in percent of the default (75%)")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-fan", _o.ocFan, "Fan speed in percent, or auto")
+        ->delimiter(',')
+        ->group(c_groupOc);
+    _app.add_option("--oc-profiles", _o.ocProfiles,
+            "Named overclocking profiles, a JSON object (the oc-profiles object of the "
+            "configuration file)")
+        ->group(c_groupOc);
+    _app.add_flag("--oc-tune{all}", _o.ocTune,
+            "Find the best memory clock and the most efficient core clock of each GPU, save them "
+            "for --oc-profile tuned and exit. --oc-tune=core only tunes the core clock, which is "
+            "safe")
+        ->check(CLI::IsMember({"all", "core"}))
+        ->group(c_groupOc);
+    _app.add_option("--oc-tune-file", _o.ocTuneFile,
+            "Tuning results (default hashwarp-oc.json next to the configuration file)")
+        ->group(c_groupOc);
+
     // Logging and display
     _app.add_option("--log-file", _o.logFile, "Also write the log to this file")
         ->group(c_groupLogging);
@@ -488,6 +550,7 @@ void registerOptions(CLI::App& _app, Options& _o)
 std::vector<std::string> validateOptions(Options& _o)
 {
     std::vector<std::string> warnings;
+    validateOc(_o);
 
     if (!_o.wallet.empty() && !isAddress(_o.wallet))
         warnings.push_back("Wallet " + _o.wallet +

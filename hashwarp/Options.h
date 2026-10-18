@@ -72,6 +72,19 @@ struct Options
     unsigned watchdogRestarts = 3;        // per GPU per hour
     std::string watchdogScript;
 
+    // Overclocking. Lists hold one value per selected GPU (x leaves a GPU alone);
+    // a single value applies to all
+    std::vector<std::string> ocProfile;
+    std::vector<std::string> ocCoreClock;
+    std::vector<std::string> ocCoreOffset;
+    std::vector<std::string> ocMemOffset;
+    std::vector<std::string> ocMemClock;
+    std::vector<std::string> ocPower;  // W or N%
+    std::vector<std::string> ocFan;    // % or auto
+    std::string ocProfiles;            // JSON object of named profiles ("oc-profiles")
+    std::string ocTune;                // all or core: run the tuner and exit
+    std::string ocTuneFile;            // tuning results (default next to the configuration)
+
     // Logging and display
     std::string logFile;
     unsigned logMaxSize = 20;  // MB
