@@ -284,12 +284,20 @@ typedef union {
 } compute_hash_share;
 
 
+// Development builds (COMPUTE_BENCH) keep DAG reads in 32 MB to measure the
+// kernel's compute efficiency: their hashes are wrong.
+#ifdef COMPUTE_BENCH
+#define DAG_ACCESS_ITEMS (dag_size < 262144u ? dag_size : 262144u)
+#else
+#define DAG_ACCESS_ITEMS dag_size
+#endif
+
 #ifdef LEGACY
 
 #define MIX(x) \
 do { \
     if (get_local_id(0) == lane_idx) { \
-        buffer[hash_id] = fnv_u(init0 ^ (a + x), ((uint *)&mix)[x]) % dag_size; \
+        buffer[hash_id] = fnv_u(init0 ^ (a + x), ((uint *)&mix)[x]) % DAG_ACCESS_ITEMS; \
     } \
     barrier(CLK_LOCAL_MEM_FENCE); \
     uint idx = buffer[hash_id]; \
@@ -304,7 +312,7 @@ do { \
 
 #define MIX(x) \
 do { \
-    buffer[get_local_id(0)] = fnv_u(init0 ^ (a + x), ((uint *)&mix)[x]) % dag_size; \
+    buffer[get_local_id(0)] = fnv_u(init0 ^ (a + x), ((uint *)&mix)[x]) % DAG_ACCESS_ITEMS; \
     uint idx = buffer[lane_idx]; \
     __global hash128_t const* g_dag; \
     g_dag = (__global hash128_t const*) _g_dag0; \

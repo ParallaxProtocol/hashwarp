@@ -809,6 +809,9 @@ bool CLMiner::initEpoch_internal()
         addDefinition(code, "WORKSIZE", m_settings.localWorkSize);
         addDefinition(code, "ACCESSES", 64);
         addDefinition(code, "DAG_NODES", m_dagItems * 2);  // 64 byte nodes
+#ifdef XHASH_COMPUTE_BENCH
+        addDefinition(code, "COMPUTE_BENCH", 1);
+#endif
         addDefinition(code, "MAX_OUTPUTS", c_maxSearchResults);
         addDefinition(code, "PLATFORM", static_cast<unsigned>(m_deviceDescriptor.clPlatformType));
         addDefinition(code, "COMPUTE", computeCapability);

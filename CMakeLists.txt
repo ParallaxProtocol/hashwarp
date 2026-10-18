@@ -41,6 +41,7 @@ option(APICORE "Build with API Server support" ON)
 option(DEVBUILD "Log developer metrics" OFF)
 option(USE_SYS_OPENCL "Build with system OpenCL" OFF)
 option(HASHWARP_TESTS "Build unit tests" OFF)
+option(HASHWARP_COMPUTE_BENCH "Development only: kernel compute benchmark, hashes are WRONG" OFF)
 
 # propagates CMake configuration options to the compiler
 function(configureProject)
@@ -64,6 +65,10 @@ function(configureProject)
   endif()
   if (USE_SYS_OPENCL)
     add_definitions(-DUSE_SYS_OPENCL)
+  endif()
+  if (HASHWARP_COMPUTE_BENCH)
+    message(WARNING "HASHWARP_COMPUTE_BENCH: this build computes wrong hashes, never mine with it")
+    add_definitions(-DXHASH_COMPUTE_BENCH)
   endif()
 endfunction()
 
