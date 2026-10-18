@@ -412,10 +412,16 @@ void CLMiner::workLoop()
 #endif
             }
 
-            // Run the kernel.
-            m_searchKernel.setArg(5, startNonce);
-            m_queue[0].enqueueNDRangeKernel(
-                m_searchKernel, cl::NullRange, m_settings.globalWorkSize, m_settings.localWorkSize);
+            // Run the kernel unless this miner's nonce segment is exhausted
+            bool inRange = !w.nonceRange || (w.nonceRange >= m_settings.globalWorkSize &&
+                                                startNonce - w.startNonce <=
+                                                    w.nonceRange - m_settings.globalWorkSize);
+            if (inRange)
+            {
+                m_searchKernel.setArg(5, startNonce);
+                m_queue[0].enqueueNDRangeKernel(m_searchKernel, cl::NullRange,
+                    m_settings.globalWorkSize, m_settings.localWorkSize);
+            }
 
             if (results.count)
             {
@@ -436,6 +442,22 @@ void CLMiner::workLoop()
                               << toHex(nonce) << EthReset;
                     }
                 }
+            }
+
+            if (!inRange)
+            {
+                if (current.header != w.header || current.startNonce != startNonce)
+                    cllog << "Nonce range of job " << w.header.abridged()
+                          << " exhausted. Waiting for new work ...";
+                current = w;
+                current.startNonce = startNonce;
+
+                // Nothing left to search on this job: wait for a new one
+                boost::system_time const timeout =
+                    boost::get_system_time() + boost::posix_time::seconds(3);
+                boost::mutex::scoped_lock l(x_work);
+                m_new_work_signal.timed_wait(l, timeout);
+                continue;
             }
 
             current = w;  // kernel now processing newest work

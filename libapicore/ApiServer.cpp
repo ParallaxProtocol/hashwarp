@@ -701,8 +701,8 @@ void ApiConnection::processRequest(Json::Value& jRequest, Json::Value& jResponse
 
         if (exp < 10)
             exp = 10;  // Not below
-        if (exp > 50)
-            exp = 40;  // Not above
+        if (exp > 63)
+            exp = 63;  // Not above
         Farm::f().set_nonce_scrambler(nonce);
         Farm::f().set_nonce_segment_width(exp);
         jResponse["result"] = true;
@@ -1107,10 +1107,9 @@ Json::Value ApiConnection::getMinerStatDetailPerMiner(
     mininginfo["pause_reason"] = _miner->paused() ? _miner->pausedString() : Json::Value::null;
 
     /* Nonce infos */
-    auto segment_width = Farm::f().get_segment_width();
-    uint64_t gpustartnonce = Farm::f().get_nonce_scrambler() + ((uint64_t)_index << segment_width);
-    jsegment.append(toHex(uint64_t(gpustartnonce), HexPrefix::Add));
-    jsegment.append(toHex(uint64_t(gpustartnonce + (1LL << segment_width)), HexPrefix::Add));
+    WorkPackage minerWork = _miner->work();
+    jsegment.append(toHex(minerWork.startNonce, HexPrefix::Add));
+    jsegment.append(toHex(minerWork.startNonce + minerWork.nonceRange - 1, HexPrefix::Add));
     mininginfo["segment"] = jsegment;
 
     /* Hash & Share infos */

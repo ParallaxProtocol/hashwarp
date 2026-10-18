@@ -62,8 +62,10 @@ public:
     static int getNumDevices();
     static void enumDevices(std::map<string, DeviceDescriptor>& _DevicesCollection);
 
-    void search(
-        uint8_t const* header, uint64_t target, uint64_t _startN, const dev::eth::WorkPackage& w);
+    // Searches from _startN until new work arrives or the miner's nonce range is
+    // exhausted (sets exhausted). Returns the next nonce to search.
+    uint64_t search(uint8_t const* header, uint64_t target, uint64_t _startN,
+        const dev::eth::WorkPackage& w, bool& exhausted);
 
 protected:
     bool initDevice() override;
@@ -84,7 +86,6 @@ private:
     CUSettings m_settings;
 
     const uint32_t m_batch_size;
-    const uint32_t m_streams_batch_size;
 
     uint64_t m_allocated_memory_dag = 0; // dag_size is a uint64_t in EpochContext struct
     size_t m_allocated_memory_light_cache = 0;

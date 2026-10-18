@@ -217,11 +217,16 @@ public:
     /**
      * @brief Sets the actual width of each subsegment assigned to miners
      */
-    void set_nonce_segment_width(unsigned n)
-    {
-        if (!m_currentWp.exSizeBytes)
-            m_nonce_segment_with = n;
-    }
+    void set_nonce_segment_width(unsigned n) { m_userSegmentWidth = n; }
+
+    /**
+     * @brief Width (in bits) of the nonce segment each miner gets so that
+     *        segments never overlap
+     * @param _exSizeHexChars  Length of the pool's extranonce in hex chars (0 if none)
+     * @param _miners          Number of miners sharing the nonce space
+     * @param _userWidth       Narrower width requested by the user (0 = auto)
+     */
+    static unsigned nonceSegmentWidth(unsigned _exSizeHexChars, size_t _miners, unsigned _userWidth);
 
     /**
      * @brief Provides the description of segments each miner is working on
@@ -289,7 +294,8 @@ private:
     // a single device GPU should need a speed of 286 Mh/s
     // before it consumes the whole 2^32 segment
     uint64_t m_nonce_scrambler;
-    unsigned int m_nonce_segment_with = 32;
+    unsigned int m_nonce_segment_with = 64;  // Width of each miner segment (set on new work)
+    unsigned int m_userSegmentWidth = 0;     // Narrower width requested via API (0 = auto)
 
     // Wrappers for hardware monitoring libraries and their mappers
     wrap_nvml_handle* nvmlh = nullptr;

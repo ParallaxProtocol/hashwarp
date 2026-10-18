@@ -65,7 +65,8 @@ struct WorkPackage
     int block = -1;
 
     uint64_t startNonce = 0;
-    uint16_t exSizeBytes = 0;
+    uint64_t nonceRange = 0;  // Nonces a miner may search from startNonce (0 = whole 2^64 space)
+    uint16_t exSizeBytes = 0;  // Extranonce length in hex chars
 
     std::string algo = "xhash";
 };

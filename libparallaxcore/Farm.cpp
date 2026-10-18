@@ -228,25 +228,50 @@ void Farm::setWork(WorkPackage const& _newWp)
     if (m_Settings.ergodicity == 2 && m_currentWp.exSizeBytes == 0)
         shuffle();
 
+    // Equally divide the nonce space left by the pool's extranonce (if any)
+    // among miners so their segments never overlap
     uint64_t _startNonce;
     if (m_currentWp.exSizeBytes > 0)
-    {
-        // Equally divide the residual segment among miners
         _startNonce = m_currentWp.startNonce;
-        m_nonce_segment_with =
-            (unsigned int)log2(pow(2, 64 - (m_currentWp.exSizeBytes * 4)) / m_miners.size());
-    }
     else
-    {
-        // Get the randomly selected nonce
-        _startNonce = m_nonce_scrambler;
-    }
+        _startNonce = m_nonce_scrambler;  // Get the randomly selected nonce
+
+    m_nonce_segment_with =
+        nonceSegmentWidth(m_currentWp.exSizeBytes, m_miners.size(), m_userSegmentWidth);
+    if (m_nonce_segment_with < 24)
+        cwarn << "Pool leaves only " << m_nonce_segment_with
+              << " bits of nonce space per GPU: GPUs will idle waiting for new jobs";
 
     for (unsigned int i = 0; i < m_miners.size(); i++)
     {
-        m_currentWp.startNonce = _startNonce + ((uint64_t)i << m_nonce_segment_with);
+        if (m_nonce_segment_with < 64)
+        {
+            m_currentWp.startNonce = _startNonce + ((uint64_t)i << m_nonce_segment_with);
+            m_currentWp.nonceRange = uint64_t(1) << m_nonce_segment_with;
+        }
+        else
+        {
+            m_currentWp.startNonce = _startNonce;
+            m_currentWp.nonceRange = 0;
+        }
         m_miners.at(i)->setWork(m_currentWp);
     }
+}
+
+unsigned Farm::nonceSegmentWidth(unsigned _exSizeHexChars, size_t _miners, unsigned _userWidth)
+{
+    unsigned bits = (_exSizeHexChars * 4u < 64u) ? 64u - _exSizeHexChars * 4u : 0u;
+
+    unsigned minerBits = 0;  // ceil(log2(miners))
+    while ((size_t(1) << minerBits) < _miners)
+        minerBits++;
+
+    unsigned width = (bits > minerBits) ? bits - minerBits : 0;
+
+    // A narrower width can only be requested when there's no extranonce
+    if (!_exSizeHexChars && _userWidth && _userWidth < width)
+        width = _userWidth;
+    return width;
 }
 
 /**
