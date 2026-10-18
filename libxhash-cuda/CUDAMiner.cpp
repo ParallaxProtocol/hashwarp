@@ -91,6 +91,7 @@ bool CUDAMiner::initEpoch_internal()
     resume(MinerPauseEnum::PauseDueToInitEpochError);
 
     bool lightOnHost = false;
+    size_t freeMemory = m_deviceDescriptor.totalMemory;
     try
     {
         hash128_t* dag;
@@ -104,16 +105,22 @@ bool CUDAMiner::initEpoch_internal()
             // We need to reset the device and (re)create the dag
             // cudaDeviceReset() frees all previous allocated memory
             CUDA_SAFE_CALL(cudaDeviceReset());
+            m_allocated_memory_dag = 0;
+            m_allocated_memory_light_cache = 0;
             CUDA_SAFE_CALL(cudaSetDeviceFlags(m_settings.schedule));
             CUDA_SAFE_CALL(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
 
             // Check whether the current device has sufficient memory every time we recreate the dag
-            if (m_deviceDescriptor.totalMemory < RequiredTotalMemory)
+            size_t totalMem;
+            CUDA_SAFE_CALL(cudaMemGetInfo(&freeMemory, &totalMem));
+            if (freeMemory < RequiredTotalMemory)
             {
-                if (m_deviceDescriptor.totalMemory < RequiredDagMemory)
+                if (freeMemory < RequiredDagMemory)
                 {
                     cudalog << "Epoch " << m_epochContext.epochNumber << " requires "
-                            << dev::getFormattedMemory((double)RequiredDagMemory) << " memory.";
+                            << dev::getFormattedMemory((double)RequiredDagMemory) << " memory. Only "
+                            << dev::getFormattedMemory((double)freeMemory)
+                            << " free on device.";
                     cudalog << "This device hasn't enough memory available. Mining suspended ...";
                     pause(MinerPauseEnum::PauseDueToInsufficientMemory);
                     return true;  // This will prevent to exit the thread and
@@ -136,9 +143,7 @@ bool CUDAMiner::initEpoch_internal()
             else
                 CUDA_SAFE_CALL(
                     cudaMalloc(reinterpret_cast<void**>(&light), m_epochContext.lightSize));
-            m_allocated_memory_light_cache = m_epochContext.lightSize;
             CUDA_SAFE_CALL(cudaMalloc(reinterpret_cast<void**>(&dag), m_epochContext.dagSize));
-            m_allocated_memory_dag = m_epochContext.dagSize;
 
             // create mining buffers
             for (unsigned i = 0; i != m_settings.streams; ++i)
@@ -146,6 +151,10 @@ bool CUDAMiner::initEpoch_internal()
                 CUDA_SAFE_CALL(cudaMallocHost(&m_search_buf[i], sizeof(Search_results)));
                 CUDA_SAFE_CALL(cudaStreamCreateWithFlags(&m_streams[i], cudaStreamNonBlocking));
             }
+
+            // Only now everything is allocated: buffers may be reused on next epoch
+            m_allocated_memory_light_cache = m_epochContext.lightSize;
+            m_allocated_memory_dag = m_epochContext.dagSize;
         }
         else
         {
@@ -169,8 +178,8 @@ bool CUDAMiner::initEpoch_internal()
                        .count()
                 << " ms. "
                 << dev::getFormattedMemory(
-                       lightOnHost ? (double)(m_deviceDescriptor.totalMemory - RequiredDagMemory) :
-                                     (double)(m_deviceDescriptor.totalMemory - RequiredTotalMemory))
+                       lightOnHost ? (double)(freeMemory - RequiredDagMemory) :
+                                     (double)(freeMemory - RequiredTotalMemory))
                 << " left.";
 
         retVar = true;
@@ -303,9 +312,7 @@ void CUDAMiner::enumDevices(std::map<string, DeviceDescriptor>& _DevicesCollecti
 
         try
         {
-            size_t freeMem, totalMem;
             CUDA_SAFE_CALL(cudaGetDeviceProperties(&props, i));
-            CUDA_SAFE_CALL(cudaMemGetInfo(&freeMem, &totalMem));
             s << setw(2) << setfill('0') << hex << props.pciBusID << ":" << setw(2)
               << props.pciDeviceID << ".0";
             uniqueId = s.str();
@@ -322,7 +329,7 @@ void CUDAMiner::enumDevices(std::map<string, DeviceDescriptor>& _DevicesCollecti
             deviceDescriptor.cuDeviceIndex = i;
             deviceDescriptor.cuDeviceOrdinal = i;
             deviceDescriptor.cuName = string(props.name);
-            deviceDescriptor.totalMemory = freeMem;
+            deviceDescriptor.totalMemory = props.totalGlobalMem;
             deviceDescriptor.cuCompute = (to_string(props.major) + "." + to_string(props.minor));
             deviceDescriptor.cuComputeMajor = props.major;
             deviceDescriptor.cuComputeMinor = props.minor;
