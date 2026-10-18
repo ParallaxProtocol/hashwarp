@@ -161,6 +161,8 @@ void dev::setLogFile(const std::string& _path, size_t _maxBytes, unsigned _keep)
     g_logFile.path = _path;
     g_logFile.maxBytes = _maxBytes;
     g_logFile.keep = _keep;
+    if (_path.empty())
+        return;
     g_logFile.out.open(_path, std::ios::out | std::ios::app);
     if (!g_logFile.out.is_open())
         throw std::runtime_error("Can't open log file " + _path);

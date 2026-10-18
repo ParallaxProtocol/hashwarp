@@ -34,7 +34,7 @@ struct LogFileTest : public ::testing::Test
     void TearDown() override
     {
         g_logLevel = savedLevel;
-        dev::setLogFile((dir / "closed.log").string(), 0, 0);  // release the test file
+        dev::setLogFile("");  // release the test file (Windows can't remove open files)
         fs::remove_all(dir);
     }
 };

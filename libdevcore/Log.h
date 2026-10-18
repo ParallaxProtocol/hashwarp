@@ -81,8 +81,8 @@ namespace dev
 void simpleDebugOut(std::string const&);
 
 /// Writes log lines also to _path (without colors, with full timestamps).
-/// The file is rotated when it grows over _maxBytes: _path.1 ... _path.<_keep>
-/// Throws std::runtime_error if the file can't be opened
+/// The file is rotated when it grows over _maxBytes: _path.1 ... _path.<_keep>.
+/// An empty _path closes the file. Throws std::runtime_error if the file can't be opened
 void setLogFile(const std::string& _path, size_t _maxBytes = 20 * 1024 * 1024, unsigned _keep = 3);
 
 /// Set the current thread's log name.
