@@ -170,6 +170,11 @@ if(WIN32)
     scripts/fix-opencl-icd.vbs DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
   install(FILES scripts/README.txt RENAME fix-opencl-icd.txt
     DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
+  # The Visual C++ runtime DLLs next to the executable, so it also runs where
+  # the redistributable is not installed
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT release)
+  include(InstallRequiredSystemLibraries)
 else()
   install(PROGRAMS packaging/release/start.sh packaging/release/start-solo.sh
     DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)

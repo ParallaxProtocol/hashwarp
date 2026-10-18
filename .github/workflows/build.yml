@@ -1,0 +1,182 @@
+name: build
+
+on:
+  push:
+    branches: [main, "release/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  CUDA_VERSION: "12.9.1"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    # Built on Ubuntu 20.04 so the executable runs on old glibc (2.28 and newer:
+    # HiveOS, mmpOS and most rig distributions)
+    container: nvidia/cuda:12.9.1-devel-ubuntu20.04
+    env:
+      HUNTER_ROOT: /hunter
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential git perl python3 \
+            python3-pip ca-certificates mesa-common-dev
+          pip3 install -q cmake==3.31.6
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Hunter cache
+        uses: actions/cache@v4
+        with:
+          path: /hunter
+          key: hunter-linux-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/**', 'cmake/xhash/**') }}
+          restore-keys: hunter-linux-
+
+      - name: Configure
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DHASHWARP_TESTS=ON \
+            -DHUNTER_JOBS_NUMBER=$(nproc)
+
+      - name: Build
+        run: cmake --build build -j$(nproc)
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          strip build/hashwarp/hashwarp
+          cmake --build build --target package
+          cmake --build build --target rig-packages
+          # The release runs on glibc 2.28 and newer, with no other library than glibc's
+          glibc=$(objdump -T build/hashwarp/hashwarp | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+          echo "needs $glibc"
+          [ "$(printf '%s\n' "$glibc" GLIBC_2.28 | sort -V | tail -1)" = GLIBC_2.28 ]
+          ! objdump -p build/hashwarp/hashwarp | grep NEEDED | grep -E 'libstdc|libgcc_s|libssl|libcrypto|libcudart'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashwarp-linux
+          path: |
+            build/hashwarp-*.tar.gz
+            build/hashwarp-*.tgz
+            build/hashwarp-*.sha256
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2022
+    env:
+      HUNTER_ROOT: C:\hunter
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: CUDA installer cache
+        id: cuda-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\cuda-installer
+          key: cuda-installer-${{ env.CUDA_VERSION }}
+
+      - name: Install CUDA
+        shell: pwsh
+        run: |
+          $v = "$env:CUDA_VERSION"
+          $mm = $v.Substring(0, $v.LastIndexOf('.'))
+          $exe = "C:\cuda-installer\cuda_${v}_windows_network.exe"
+          if (-not (Test-Path $exe)) {
+            New-Item -ItemType Directory -Force C:\cuda-installer | Out-Null
+            Invoke-WebRequest "https://developer.download.nvidia.com/compute/cuda/$v/network_installers/cuda_${v}_windows_network.exe" -OutFile $exe
+          }
+          $pkgs = "nvcc_$mm", "cudart_$mm"
+          $p = Start-Process -FilePath $exe -ArgumentList (@("-s") + $pkgs + @("-n")) -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "CUDA installer failed: $($p.ExitCode)" }
+          $cuda = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$mm"
+          & "$cuda\bin\nvcc.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "nvcc missing" }
+          "CUDA_PATH=$cuda" | Out-File -Append $env:GITHUB_ENV
+          "$cuda\bin" | Out-File -Append $env:GITHUB_PATH
+
+      - name: Hunter cache
+        uses: actions/cache@v4
+        with:
+          path: C:\hunter
+          key: hunter-windows-${{ hashFiles('CMakeLists.txt', 'cmake/Hunter/**', 'cmake/xhash/**') }}
+          restore-keys: hunter-windows-
+
+      - name: MSVC environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($matches[1])=$($matches[2])" | Out-File -Append $env:GITHUB_ENV }
+          }
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DHASHWARP_TESTS=ON
+          -DCMAKE_CUDA_COMPILER="$env:CUDA_PATH/bin/nvcc.exe"
+          -DHUNTER_JOBS_NUMBER="$env:NUMBER_OF_PROCESSORS"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: cmake --build build --target package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hashwarp-windows
+          path: |
+            build/hashwarp-*.zip
+            build/hashwarp-*.sha256
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag against the project version
+        run: |
+          version=$(sed -n 's/^set(PROJECT_VERSION \(.*\))$/\1/p' CMakeLists.txt)
+          [ "$GITHUB_REF_NAME" = "v$version" ] || {
+            echo "tag $GITHUB_REF_NAME does not match PROJECT_VERSION $version"; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # A draft: the notes and the announcement are written by hand before publishing
+      - name: Create a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist && sha256sum hashwarp-* | grep -v '\.sha256' > SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --draft --title "hashwarp $GITHUB_REF_NAME" \
+            --generate-notes -R "$GITHUB_REPOSITORY" hashwarp-* SHA256SUMS

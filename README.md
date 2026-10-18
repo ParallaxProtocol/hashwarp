@@ -1,7 +1,7 @@
 # Hashwarp
 
 [![Releases](https://img.shields.io/github/downloads/microstack-tech/hashwarp/total.svg)][Releases]
-[![AppVeyor](https://img.shields.io/appveyor/ci/microstack-tech/hashwarp/main.svg)][AppVeyor]
+[![Build](https://github.com/microstack-tech/hashwarp/actions/workflows/build.yml/badge.svg?branch=main)][Build]
 
 > The official GPU miner for [Parallax](https://parallaxprotocol.org) (XHash): open source, no fee.
 
@@ -38,7 +38,9 @@ Download the archive for your operating system from [Releases] and extract it. I
 
 * **NVIDIA**: driver 525 or newer
 * **AMD**: the AMD driver with OpenCL (ROCm or Adrenalin)
-* **Windows**: the [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+* **Linux**: glibc 2.28 or newer (Ubuntu 20.04, Debian 10, RHEL 8 and later, current HiveOS and
+  mmpOS images); the other libraries are built in
+* **Windows**: Windows 10 or newer; the Visual C++ runtime comes in the archive
 
 ## Quick start
 
@@ -119,13 +121,13 @@ the order of `--gpu-id` (or of `--list-devices`); a single value applies to all 
 
 ## Build
 
-See [docs/BUILD.md](docs/BUILD.md). The AppVeyor builds of the `main` branch are available
-[on the project page][AppVeyor].
+See [docs/BUILD.md](docs/BUILD.md). Builds of the `main` branch are attached to its
+[workflow runs][Build].
 
 ## License
 
 Licensed under the [GNU General Public License, Version 3](LICENSE). Hashwarp started as a fork of
 [ethminer](https://github.com/ethereum-mining/ethminer).
 
-[AppVeyor]: https://ci.appveyor.com/project/microstack-tech/hashwarp
+[Build]: https://github.com/microstack-tech/hashwarp/actions/workflows/build.yml
 [Releases]: https://github.com/microstack-tech/hashwarp/releases
