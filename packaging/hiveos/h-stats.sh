@@ -10,8 +10,9 @@ if [[ -z $hashwarp_summary ]] || ! jq -e .gpus <<< "$hashwarp_summary" > /dev/nu
     stats="null"
 else
     # PCI bus numbers in decimal ("0a:00.0" -> 10), in GPU order
-    hashwarp_buses=$(for pci in $(jq -r '.gpus[].pci' <<< "$hashwarp_summary"); do
-        echo $((16#${pci%%:*}))
+    hashwarp_buses=$(jq -r '.gpus[].pci' <<< "$hashwarp_summary" | while read -r pci; do
+        # bb:dd.f, or a GPU without a PCI id (reported as 0)
+        if [[ $pci =~ ^([0-9a-fA-F]{2}): ]]; then echo $((16#${BASH_REMATCH[1]})); else echo 0; fi
     done | jq -s -c .)
 
     khs=$(jq '.hashrate.now / 1000' <<< "$hashwarp_summary")

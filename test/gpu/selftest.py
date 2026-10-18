@@ -17,6 +17,7 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,18 @@ def main():
         pool = "stratum2+tcp://0xabc.selftest@127.0.0.1:%d" % args.port
     mock = subprocess.Popen([sys.executable, "-I"] + mock_cmd, stdout=mocklog,
         stderr=subprocess.STDOUT)
-    time.sleep(1)
+    # Wait until the mock listens (it fails if the port is still in use)
+    for _ in range(50):
+        if mock.poll() is not None:
+            mocklog.seek(0)
+            print(mocklog.read())
+            print("FAIL: the mock %s didn't start (port %d in use?)" % (args.protocol, args.port))
+            return 1
+        try:
+            socket.create_connection(("127.0.0.1", args.port), 0.2).close()
+            break
+        except OSError:
+            time.sleep(0.1)
     backend = {"cuda": "-U", "opencl": "-G"}[args.backend]
     miner = subprocess.Popen([args.miner, backend, "-P", pool],
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

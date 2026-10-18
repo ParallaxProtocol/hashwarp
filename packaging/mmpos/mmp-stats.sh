@@ -8,8 +8,9 @@ summary=$(curl --connect-timeout 2 --max-time 10 --noproxy '*' -s "http://127.0.
 [[ -z $summary ]] && exit 1
 
 # PCI bus numbers in decimal ("0a:00.0" -> 10), in GPU order
-buses=$(for pci in $(jq -r '.gpus[].pci' <<< "$summary"); do
-    echo $((16#${pci%%:*}))
+buses=$(jq -r '.gpus[].pci' <<< "$summary" | while read -r pci; do
+    # bb:dd.f, or a GPU without a PCI id (reported as 0)
+    if [[ $pci =~ ^([0-9a-fA-F]{2}): ]]; then echo $((16#${BASH_REMATCH[1]})); else echo 0; fi
 done | jq -s -c .)
 
 jq -c --argjson busid "$buses" --arg name "$EXTERNAL_NAME" '{

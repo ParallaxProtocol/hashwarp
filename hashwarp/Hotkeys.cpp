@@ -13,6 +13,7 @@
 #include <windows.h>
 #else
 #include <poll.h>
+#include <signal.h>
 #include <termios.h>
 #include <unistd.h>
 #endif
@@ -37,11 +38,21 @@ void restoreTerminal()
     }
 }
 
+// Whether hashwarp runs in the terminal's foreground: reading it, or changing
+// its settings, from the background would stop the process (SIGTTIN, SIGTTOU)
+bool foreground()
+{
+    return tcgetpgrp(STDIN_FILENO) == getpgrp();
+}
+
 bool rawTerminal()
 {
     std::lock_guard<std::mutex> l(x_terminal);
-    if (tcgetattr(STDIN_FILENO, &g_savedTerminal) != 0)
+    if (!foreground() || tcgetattr(STDIN_FILENO, &g_savedTerminal) != 0)
         return false;
+    // Restoring the terminal after being moved to the background (Ctrl+Z, bg)
+    // must not stop the process
+    signal(SIGTTOU, SIG_IGN);
     struct termios raw = g_savedTerminal;
     raw.c_lflag &= ~(ICANON | ECHO);  // keep ISIG: Ctrl+C still stops hashwarp
     raw.c_cc[VMIN] = 0;
@@ -52,7 +63,10 @@ bool rawTerminal()
     {
         static bool registered = false;
         if (!registered)
+        {
             std::atexit(restoreTerminal);
+            std::at_quick_exit(restoreTerminal);  // the watchdog exits with quick_exit
+        }
         registered = true;
     }
     g_terminalChanged = true;
@@ -98,6 +112,11 @@ void Hotkeys::readLoop()
         }
         Sleep(100);
 #else
+        if (!foreground())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
+        }
         struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
         if (poll(&pfd, 1, 100) <= 0)
             continue;

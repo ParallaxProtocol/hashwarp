@@ -489,7 +489,7 @@ std::vector<std::string> validateOptions(Options& _o)
     checkPerGpu(_o.cudaBlockSize, {32, 64, 128, 256}, 0, 0, "cuda-block-size");
     checkPerGpu(_o.cudaStreams, {}, 1, 99, "cuda-streams");
     checkPerGpu(_o.clLocalWork, {64, 128, 256}, 0, 0, "cl-local-work");
-    checkPerGpu(_o.clGlobalWork, {}, 1, 1u << 24, "cl-global-work");
+    checkPerGpu(_o.clGlobalWork, {}, 1, 1u << 22, "cl-global-work");  // x 256 fits 32 bits
     checkPerGpu(_o.tempStop, {}, 30, 100, "temp-stop");
     checkPerGpu(_o.tempResume, {}, 20, 100, "temp-resume");
     checkPerGpu(_o.memTempStop, {}, 40, 120, "mem-temp-stop");
