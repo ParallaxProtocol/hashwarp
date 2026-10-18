@@ -397,14 +397,10 @@ void PoolManager::rotateConnect()
     }
     else if (m_connectionAttempt >= m_Settings.connectionMaxRetries)
     {
-        // If this is the only connection we can't rotate
-        // forever
-        if (m_Settings.connections.size() == 1)
-        {
-            m_Settings.connections.erase(m_Settings.connections.begin() + m_activeConnectionIdx);
-        }
-        // Rotate connections if above max attempts threshold
-        else
+        // If this is the only connection there's nothing to rotate to:
+        // keep retrying it (with backoff, see below) instead of giving up
+        // on a transient network or pool outage
+        if (m_Settings.connections.size() > 1)
         {
             m_connectionAttempt = 0;
             m_activeConnectionIdx++;
@@ -443,8 +439,12 @@ void PoolManager::rotateConnect()
         
         if ((m_connectionAttempt > 1) && (m_Settings.delayBeforeRetry > 0))
         {
-            cnote << "Next connection attempt in " << m_Settings.delayBeforeRetry << " seconds";
-            m_reconnecttimer.expires_from_now(boost::posix_time::seconds(m_Settings.delayBeforeRetry));
+            // Exponential backoff: delay, 2*delay, 4*delay ... capped
+            unsigned delay = m_Settings.delayBeforeRetry
+                             << std::min(m_connectionAttempt - 2, 5U);
+            delay = std::min(delay, std::max(m_Settings.delayBeforeRetry, 120U));
+            cnote << "Next connection attempt in " << delay << " seconds";
+            m_reconnecttimer.expires_from_now(boost::posix_time::seconds(delay));
             m_reconnecttimer.async_wait(m_io_strand.wrap(boost::bind(
                 &PoolManager::reconnecttimer_elapsed, this, boost::asio::placeholders::error)));
         }

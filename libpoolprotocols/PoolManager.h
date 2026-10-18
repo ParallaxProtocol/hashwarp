@@ -31,7 +31,7 @@ struct PoolSettings
     std::string hashRateId =
         h256::random().hex(HexPrefix::Add);  // Unique identifier for HashRate submission
     unsigned connectionMaxRetries = 3;       // Max number of connection retries
-    unsigned delayBeforeRetry = 0;           // Delay seconds before connect retry
+    unsigned delayBeforeRetry = 5;           // Base delay seconds before connect retry (doubles up to 120)
     unsigned benchmarkBlock = 0;  // Block number used by SimulateClient to test performances
 };
 

@@ -999,11 +999,15 @@ public:
                  << endl
                  << "                        Value expressed in milliseconds" << endl
                  << "                        It has no meaning in stratum mode" << endl
-                 << "    --farm-retries      INT[1 .. 99999] Default = 3" << endl
+                 << "    --farm-retries      INT[0 .. 99999] Default = 3" << endl
                  << "                        Set number of reconnection retries to same pool"
                  << endl
-                 << "    --retry-delay       INT[1 .. 999] Default = 0" << endl
+                 << "                        before switching to the next one. A single pool"
+                 << endl
+                 << "                        is retried forever" << endl
+                 << "    --retry-delay       INT[1 .. 999] Default = 5" << endl
                  << "                        Delay in seconds before reconnection retry" << endl
+                 << "                        Doubles on each failed attempt (up to 120)" << endl
                  << "    --failover-timeout  INT[0 .. ] Default not set" << endl
                  << "                        Sets the number of minutes hashwarp can stay" << endl
                  << "                        connected to a fail-over pool before trying to" << endl
