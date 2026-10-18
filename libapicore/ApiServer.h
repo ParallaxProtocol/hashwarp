@@ -8,6 +8,8 @@
 
 #include <json/json.h>
 
+#include "HttpApi.h"
+
 #include <libparallaxcore/Farm.h>
 #include <libparallaxcore/Miner.h>
 #include <libpoolprotocols/PoolManager.h>
@@ -51,6 +53,12 @@ private:
     Json::Value getMinerStatDetailPerMiner(const TelemetryType& _t, std::shared_ptr<Miner> _miner);
 
     std::string getHttpMinerStatDetail();
+
+    // HTTP API (dashboard, /api/v1/summary, /metrics, /api/v1/control)
+    std::string handleHttp(const hashwarp::api::HttpRequest& _request);
+    bool httpAuthorized(const hashwarp::api::HttpRequest& _request);
+    Json::Value getSummary();
+    std::string control(const Json::Value& _body);  // Error message, empty on success
 
     Disconnected m_onDisconnected;
 

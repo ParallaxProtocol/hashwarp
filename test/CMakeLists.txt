@@ -4,6 +4,7 @@ add_executable(hashwarp-unittests
   unittests/test_epoch.cpp
   unittests/test_nonce_segments.cpp
   unittests/test_options.cpp
+  unittests/test_httpapi.cpp
   unittests/test_log.cpp
   unittests/test_uri.cpp
   unittests/test_wizard.cpp
@@ -14,7 +15,7 @@ if(UNIX AND NOT APPLE)
 endif()
 target_include_directories(hashwarp-unittests PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(hashwarp-unittests PRIVATE
-  hashwarp-cli poolprotocols parallaxcore hwmon devcore xhash::xhash Boost::filesystem
+  hashwarp-cli apicore poolprotocols parallaxcore hwmon devcore xhash::xhash Boost::filesystem
   GTest::gtest_main)
 
 add_test(NAME unittests COMMAND hashwarp-unittests)

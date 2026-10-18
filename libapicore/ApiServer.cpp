@@ -1,4 +1,5 @@
 #include "ApiServer.h"
+#include "HttpApi.h"
 
 #include <hashwarp/buildinfo.h>
 
@@ -786,15 +787,6 @@ void ApiConnection::recvSocketData()
 void ApiConnection::onRecvSocketDataCompleted(
     const boost::system::error_code& ec, std::size_t bytes_transferred)
 {
-    /*
-    Standard http request detection pattern
-    1st group : any UPPERCASE word
-    2nd group : the path
-    3rd group : HTTP version
-    */
-    static std::regex http_pattern("^([A-Z]{1,6}) (\\/[\\S]*) (HTTP\\/1\\.[0-9]{1})");
-    std::smatch http_matches;
-
     if (!ec && bytes_transferred > 0)
     {
         // Extract received message and free the buffer
@@ -817,86 +809,22 @@ void ApiConnection::onRecvSocketDataCompleted(
         if (m_message.size() < 4)
             return;  // Wait for other data to come in
 
-        if (std::regex_search(
-                m_message, http_matches, http_pattern, std::regex_constants::match_default))
+        if (hashwarp::api::looksLikeHttp(m_message))
         {
-            // We got an HTTP request
-            std::string http_method = http_matches[1].str();
-            std::string http_path = http_matches[2].str();
-            std::string http_ver = http_matches[3].str();
-
-            // Do we support method ?
-            if (http_method != "GET")
+            hashwarp::api::HttpRequest request;
+            size_t consumed = 0;
+            auto result = hashwarp::api::parseHttpRequest(m_message, request, consumed);
+            if (result == hashwarp::api::ParseResult::Incomplete)
             {
-                std::string what = "Method " + http_method + " not allowed";
-                std::stringstream ss;
-                ss << http_ver << " "
-                   << "405 Method not allowed\r\n"
-                   << "Server: " << hashwarp_get_buildinfo()->project_name_with_version << "\r\n"
-                   << "Content-Type: text/plain\r\n"
-                   << "Content-Length: " << what.size() << "\r\n\r\n"
-                   << what << "\r\n";
-                sendSocketData(ss.str(), true);
-                m_message.clear();
+                recvSocketData();
                 return;
             }
-
-            // Do we support path ?
-            if (http_path != "/" && http_path != "/getstat1")
-            {
-                std::string what =
-                    "The requested resource " + http_path + " not found on this server";
-                std::stringstream ss;
-                ss << http_ver << " "
-                   << "404 Not Found\r\n"
-                   << "Server: " << hashwarp_get_buildinfo()->project_name_with_version << "\r\n"
-                   << "Content-Type: text/plain\r\n"
-                   << "Content-Length: " << what.size() << "\r\n\r\n"
-                   << what << "\r\n";
-                sendSocketData(ss.str(), true);
-                m_message.clear();
-                return;
-            }
-
-            //// Get all the lines - we actually don't care much
-            //// until we support other http methods or paths
-            //// Keep this for future use (if any)
-            //// Remember to #include <boost/algorithm/string.hpp>
-            // std::vector<std::string> lines;
-            // boost::split(lines, m_message, [](char _c) { return _c == '\n'; });
-
-            std::stringstream ss;  // Builder of the response
-
-            if (http_method == "GET" && (http_path == "/" || http_path == "/getstat1"))
-            {
-                try
-                {
-                    std::string body = getHttpMinerStatDetail();
-                    ss.clear();
-                    ss << http_ver << " "
-                       << "200 OK\r\n"
-                       << "Server: " << hashwarp_get_buildinfo()->project_name_with_version
-                       << "\r\n"
-                       << "Content-Type: text/html; charset=utf-8\r\n"
-                       << "Content-Length: " << body.size() << "\r\n\r\n"
-                       << body << "\r\n";
-                }
-                catch (const std::exception& _ex)
-                {
-                    std::string what = "Internal error : " + std::string(_ex.what());
-                    ss.clear();
-                    ss << http_ver << " "
-                       << "500 Internal Server Error\r\n"
-                       << "Server: " << hashwarp_get_buildinfo()->project_name_with_version
-                       << "\r\n"
-                       << "Content-Type: text/plain\r\n"
-                       << "Content-Length: " << what.size() << "\r\n\r\n"
-                       << what << "\r\n";
-                }
-            }
-
-            sendSocketData(ss.str(), true);
             m_message.clear();
+            if (result == hashwarp::api::ParseResult::Invalid)
+                sendSocketData(
+                    hashwarp::api::httpResponse(400, "text/plain", "Invalid request\n"), true);
+            else
+                sendSocketData(handleHttp(request), true);
         }
         else
         {
@@ -1119,6 +1047,178 @@ Json::Value ApiConnection::getMinerStatDetailPerMiner(
     jRes["mining"] = mininginfo;
 
     return jRes;
+}
+
+bool ApiConnection::httpAuthorized(const hashwarp::api::HttpRequest& _request)
+{
+    if (m_password.empty())
+        return true;
+    auto it = _request.headers.find("authorization");
+    return it != _request.headers.end() && it->second.compare(0, 7, "Bearer ") == 0 &&
+           hashwarp::api::secretEquals(it->second.substr(7), m_password);
+}
+
+std::string ApiConnection::handleHttp(const hashwarp::api::HttpRequest& _request)
+{
+    using namespace hashwarp::api;
+    static const std::string unauthorized =
+        httpResponse(401, "text/plain", "Missing or wrong token: send Authorization: Bearer <token>\n",
+            "WWW-Authenticate: Bearer\r\n");
+    try
+    {
+        const std::string& path = _request.path;
+        bool get = _request.method == "GET";
+
+        if (path == "/" || path == "/index.html")
+            return get ? httpResponse(200, "text/html; charset=utf-8", c_dashboardHtml) :
+                         httpResponse(405, "text/plain", "Use GET\n");
+
+        if (path == "/getstat1" || path == "/api/v1/summary" || path == "/metrics")
+        {
+            if (!get)
+                return httpResponse(405, "text/plain", "Use GET\n");
+            if (!httpAuthorized(_request))
+                return unauthorized;
+            if (path == "/getstat1")
+                return httpResponse(200, "text/html; charset=utf-8", getHttpMinerStatDetail());
+            Json::Value summary = getSummary();
+            if (path == "/metrics")
+                return httpResponse(
+                    200, "text/plain; version=0.0.4; charset=utf-8", metricsFromSummary(summary));
+            return httpResponse(
+                200, "application/json", Json::writeString(m_jSwBuilder, summary) + "\n");
+        }
+
+        if (path == "/api/v1/control")
+        {
+            if (_request.method != "POST")
+                return httpResponse(405, "text/plain", "Use POST\n");
+            if (m_readonly)
+                return httpResponse(403, "text/plain",
+                    "Control is not allowed: start hashwarp with --api-allow-control\n");
+            if (!httpAuthorized(_request))
+                return unauthorized;
+            Json::Value body;
+            Json::CharReaderBuilder builder;
+            std::string errors;
+            std::istringstream in(_request.body);
+            if (!Json::parseFromStream(builder, in, &body, &errors) || !body.isObject())
+                return httpResponse(400, "text/plain", "Body must be a JSON object\n");
+            std::string error = control(body);
+            if (!error.empty())
+                return httpResponse(400, "text/plain", error + "\n");
+            return httpResponse(200, "application/json", "{\"result\":true}\n");
+        }
+
+        return httpResponse(404, "text/plain", "Not found\n");
+    }
+    catch (const std::exception& _ex)
+    {
+        return httpResponse(500, "text/plain", std::string("Internal error: ") + _ex.what() + "\n");
+    }
+}
+
+std::string ApiConnection::control(const Json::Value& _body)
+{
+    std::string action = _body.get("action", "").asString();
+    std::vector<std::shared_ptr<Miner>> miners;
+    if (_body.isMember("gpu"))
+    {
+        if (!_body["gpu"].isUInt())
+            return "gpu must be a GPU index";
+        auto miner = Farm::f().getMiner(_body["gpu"].asUInt());
+        if (!miner)
+            return "There is no GPU " + std::to_string(_body["gpu"].asUInt());
+        miners.push_back(miner);
+    }
+    else
+        miners = Farm::f().getMiners();
+
+    if (action == "pause")
+    {
+        for (auto& m : miners)
+            m->pause(MinerPauseEnum::PauseDueToAPIRequest);
+        cnote << "API: paused " << (_body.isMember("gpu") ? "GPU " + _body["gpu"].asString() : "all GPUs");
+    }
+    else if (action == "resume")
+    {
+        for (auto& m : miners)
+            m->resume(MinerPauseEnum::PauseDueToAPIRequest);
+        cnote << "API: resumed " << (_body.isMember("gpu") ? "GPU " + _body["gpu"].asString() : "all GPUs");
+    }
+    else if (action == "restart")
+    {
+        cnote << "API: restarting the miners";
+        Farm::f().restart_async();
+    }
+    else
+        return "action must be pause, resume or restart";
+    return "";
+}
+
+Json::Value ApiConnection::getSummary()
+{
+    const TelemetryType& t = Farm::f().Telemetry();
+    Json::Value s;
+
+    s["miner"]["name"] = "hashwarp";
+    s["miner"]["version"] = hashwarp_get_buildinfo()->project_version;
+    s["miner"]["algorithm"] = "xhash";
+    s["miner"]["uptime"] = Json::UInt64(
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t.start)
+            .count());
+    s["control"] = !m_readonly;
+
+    auto conn = PoolManager::p().getActiveConnection();
+    Json::Value& pool = s["pool"];
+    pool["connected"] = PoolManager::p().isConnected();
+    pool["host"] = conn ? conn->Host() + ":" + std::to_string(conn->Port()) : "";
+    pool["url"] = conn ? conn->strRedacted() : "";
+    pool["difficulty"] = PoolManager::p().getCurrentDifficulty();
+    pool["epoch"] = PoolManager::p().getCurrentEpoch();
+    pool["block"] = PoolManager::p().getCurrentBlock();
+    pool["switches"] = PoolManager::p().getConnectionSwitches();
+
+    s["hashrate"]["now"] = t.farm.hashrate;
+    s["hashrate"]["60s"] = t.farm.hashrate60;
+    s["hashrate"]["15m"] = t.farm.hashrate900;
+    s["hashrate"]["effective"] = t.effectiveHashrate;
+    s["shares"]["accepted"] = t.farm.solutions.accepted;
+    s["shares"]["rejected"] = t.farm.solutions.rejected;
+    s["shares"]["failed"] = t.farm.solutions.failed;
+
+    s["gpus"] = Json::Value(Json::arrayValue);
+    for (const auto& miner : Farm::f().getMiners())
+    {
+        unsigned i = miner->Index();
+        if (i >= t.miners.size())
+            continue;
+        const TelemetryAccountType& m = t.miners[i];
+        DeviceDescriptor d = miner->getDescriptor();
+        Json::Value g;
+        g["index"] = i;
+        g["name"] = d.name;
+        g["pci"] = d.uniqueId;
+        g["backend"] = m.prefix;
+        g["hashrate"]["now"] = m.hashrate;
+        g["hashrate"]["60s"] = m.hashrate60;
+        g["hashrate"]["15m"] = m.hashrate900;
+        g["shares"]["accepted"] = m.solutions.accepted;
+        g["shares"]["rejected"] = m.solutions.rejected;
+        g["shares"]["failed"] = m.solutions.failed;
+        g["paused"] = miner->paused();
+        g["pause_reason"] = miner->pausedString();
+        g["temperature"]["core"] = m.sensors.tempC;
+        g["temperature"]["hotspot"] = m.sensors.hotspotC;
+        g["temperature"]["memory"] = m.sensors.memTempC;
+        g["fan"] = m.sensors.fanP;
+        g["power"] = m.sensors.powerW;
+        g["power_limit"] = m.sensors.powerLimitW;
+        g["clocks"]["core"] = m.sensors.coreMHz;
+        g["clocks"]["memory"] = m.sensors.memMHz;
+        s["gpus"].append(g);
+    }
+    return s;
 }
 
 std::string ApiConnection::getHttpMinerStatDetail()
