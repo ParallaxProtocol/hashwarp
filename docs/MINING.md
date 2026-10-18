@@ -194,3 +194,4 @@ relies on.
 | Rejected shares with a `low difficulty` reason | Make sure the pool's stratum flavour is detected (`--esm`), and report it with `--log-debug json` output |
 | `Epoch N requires ... memory` | The GPU doesn't have enough free memory for the DAG |
 | Hashrate drops to 0 and `paused` | A temperature limit was reached (see the warning above it) |
+| `Rusticl warning` or `pci id for fd` lines at start (Linux) | Printed by Mesa's OpenCL driver, harmless. Mine with `--cuda` on NVIDIA only rigs, or set `OCL_ICD_VENDORS` to the vendor's `.icd` file (e.g. `nvidia.icd`) |
