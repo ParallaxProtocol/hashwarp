@@ -362,6 +362,19 @@ void registerOptions(CLI::App& _app, Options& _o)
             "Resume a GPU paused by --temp-stop at this temperature (default stop - 15)")
         ->delimiter(',')
         ->group(c_groupHardware);
+    _app.add_option("--mem-temp-stop", _o.memTempStop,
+            "Pause a GPU at this memory temperature in C (hotspot on GPUs without memory "
+            "sensor) [40 .. 120] (default off)")
+        ->delimiter(',')
+        ->group(c_groupHardware);
+    _app.add_option("--mem-temp-resume", _o.memTempResume,
+            "Resume a GPU paused by --mem-temp-stop at this temperature (default stop - 10)")
+        ->delimiter(',')
+        ->group(c_groupHardware);
+    _app.add_option("--shutdown-temp", _o.shutdownTemp,
+            "Stop hashwarp if any GPU temperature reaches this in C (default off)")
+        ->check(CLI::Range(0, 125))
+        ->group(c_groupHardware);
 
     // Logging and display
     _app.add_option("--log-file", _o.logFile, "Also write the log to this file")
@@ -458,6 +471,8 @@ std::vector<std::string> validateOptions(Options& _o)
     checkPerGpu(_o.clGlobalWork, {}, 1, 1u << 24, "cl-global-work");
     checkPerGpu(_o.tempStop, {}, 30, 100, "temp-stop");
     checkPerGpu(_o.tempResume, {}, 20, 100, "temp-resume");
+    checkPerGpu(_o.memTempStop, {}, 40, 120, "mem-temp-stop");
+    checkPerGpu(_o.memTempResume, {}, 30, 120, "mem-temp-resume");
     for (size_t i = 0; i < std::max(_o.tempStop.size(), _o.tempResume.size()); i++)
     {
         unsigned stop = perGpu(_o.tempStop, i);
@@ -465,6 +480,15 @@ std::vector<std::string> validateOptions(Options& _o)
         if (stop && resume && resume >= stop)
             throw std::invalid_argument("--temp-resume must be lower than --temp-stop");
     }
+    for (size_t i = 0; i < std::max(_o.memTempStop.size(), _o.memTempResume.size()); i++)
+    {
+        unsigned stop = perGpu(_o.memTempStop, i);
+        unsigned resume = perGpu(_o.memTempResume, i);
+        if (stop && resume && resume >= stop)
+            throw std::invalid_argument("--mem-temp-resume must be lower than --mem-temp-stop");
+    }
+    if (_o.shutdownTemp && _o.shutdownTemp < 50)
+        throw std::invalid_argument("--shutdown-temp must be at least 50");
 
     if (!_o.apiBind.empty())
     {

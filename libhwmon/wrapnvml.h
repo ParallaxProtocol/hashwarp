@@ -51,6 +51,25 @@ typedef struct
  * Handle to hold the function pointers for the entry points we need,
  * and the shared library itself.
  */
+/* Subset of nvmlFieldValue_t used to query field values */
+typedef struct
+{
+    unsigned int fieldId;
+    unsigned int scopeId;
+    long long timestamp;
+    long long latencyUsec;
+    int valueType;
+    wrap_nvmlReturn_t nvmlReturn;
+    union
+    {
+        double dVal;
+        unsigned int uiVal;
+        unsigned long ulVal;
+        unsigned long long ullVal;
+        signed long long sllVal;
+    } value;
+} wrap_nvmlFieldValue_t;
+
 typedef struct
 {
     void* nvml_dll;
@@ -68,6 +87,10 @@ typedef struct
     wrap_nvmlReturn_t (*nvmlDeviceGetFanSpeed)(wrap_nvmlDevice_t, unsigned int*);
     wrap_nvmlReturn_t (*nvmlDeviceGetPowerUsage)(wrap_nvmlDevice_t, unsigned int*);
     wrap_nvmlReturn_t (*nvmlShutdown)(void);
+    /* Optional (null if the driver doesn't provide them) */
+    wrap_nvmlReturn_t (*nvmlDeviceGetClockInfo)(wrap_nvmlDevice_t, int, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetEnforcedPowerLimit)(wrap_nvmlDevice_t, unsigned int*);
+    wrap_nvmlReturn_t (*nvmlDeviceGetFieldValues)(wrap_nvmlDevice_t, int, wrap_nvmlFieldValue_t*);
 } wrap_nvml_handle;
 
 
@@ -103,6 +126,16 @@ int wrap_nvml_get_fanpcnt(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* f
  * If the query is run on an unsupported GPU, this routine will return -1.
  */
 int wrap_nvml_get_power_usage(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* milliwatts);
+
+/* Memory temperature (HBM and some GDDR boards), -1 if not available */
+int wrap_nvml_get_mem_tempC(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* tempC);
+
+/* Current graphics and memory clocks in MHz */
+int wrap_nvml_get_clocks(
+    wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* coreMHz, unsigned int* memMHz);
+
+/* Enforced power limit */
+int wrap_nvml_get_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* milliwatts);
 
 
 #if defined(__cplusplus)

@@ -57,6 +57,7 @@ struct FarmSettings
     unsigned ergodicity = 0;   // 0=default, 1=per session, 2=per job
     unsigned tempStart = 40;   // Temperature threshold to restart mining (if paused)
     unsigned tempStop = 0;     // Temperature threshold to pause mining (overheating)
+    unsigned shutdownTemp = 0; // Stop hashwarp if a GPU (core, hotspot or memory) gets this hot
 };
 
 /**
@@ -259,6 +260,12 @@ private:
 
     // Collects data about hashing and hardware status
     void collectData(const boost::system::error_code& ec);
+
+    // Reads temperatures, fan, power and clocks of a miner's GPU
+    HwSensorsType readSensors(Miner& _miner);
+
+    // Pauses, resumes or stops on the temperature limits
+    void checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& _sensors);
 
     /**
      * @brief Spawn a file - must be located in the directory of hashwarp binary

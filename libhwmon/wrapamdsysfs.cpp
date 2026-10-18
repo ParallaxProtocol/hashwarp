@@ -27,6 +27,12 @@
 #include "wrapamdsysfs.h"
 #include "wraphelper.h"
 
+std::string wrap_amdsysfs_root()
+{
+    const char* root = getenv("HASHWARP_SYSFS_ROOT");
+    return root ? root : "";
+}
+
 static bool getFileContentValue(const char* filename, unsigned int& value)
 {
     value = 0;
@@ -50,9 +56,10 @@ wrap_amdsysfs_handle* wrap_amdsysfs_create()
     namespace fs = boost::filesystem;
     std::vector<pciInfo> devices;  // Used to collect devices
 
-    char dbuf[120];
+    char dbuf[512];
     // Check directory exist
-    fs::path drm_dir("/sys/class/drm");
+    const std::string root = wrap_amdsysfs_root();
+    fs::path drm_dir(root + "/sys/class/drm");
     if (!fs::exists(drm_dir) || !fs::is_directory(drm_dir))
         return nullptr;
 
@@ -74,14 +81,15 @@ wrap_amdsysfs_handle* wrap_amdsysfs_create()
         unsigned int hwmonIndex = UINT_MAX;
 
         // Get AMD cards only (vendor 4098)
-        fs::path vendor_file("/sys/class/drm/" + devName + "/device/vendor");
-        snprintf(dbuf, 120, "/sys/class/drm/%s/device/vendor", devName.c_str());
+        fs::path vendor_file(root + "/sys/class/drm/" + devName + "/device/vendor");
+        snprintf(dbuf, sizeof(dbuf), "%s/sys/class/drm/%s/device/vendor", root.c_str(),
+            devName.c_str());
         if (!fs::exists(vendor_file) || !fs::is_regular_file(vendor_file) ||
             !getFileContentValue(dbuf, vendorId) || vendorId != 4098)
             continue;
 
         // Check it has dependant hwmon directory
-        fs::path hwmon_dir("/sys/class/drm/" + devName + "/device/hwmon");
+        fs::path hwmon_dir(root + "/sys/class/drm/" + devName + "/device/hwmon");
         if (!fs::exists(hwmon_dir) || !fs::is_directory(hwmon_dir))
             continue;
 
@@ -101,11 +109,12 @@ wrap_amdsysfs_handle* wrap_amdsysfs_create()
             continue;
 
         // Detect Pci Id
-        fs::path uevent_file("/sys/class/drm/" + devName + "/device/uevent");
+        fs::path uevent_file(root + "/sys/class/drm/" + devName + "/device/uevent");
         if (!fs::exists(uevent_file) || !fs::is_regular_file(uevent_file))
             continue;
 
-        snprintf(dbuf, 120, "/sys/class/drm/card%d/device/uevent", devIndex);
+        snprintf(dbuf, sizeof(dbuf), "%s/sys/class/drm/card%d/device/uevent", root.c_str(),
+            devIndex);
         std::ifstream ifs(dbuf, std::ios::binary);
         std::string line;
         int PciDomain = -1, PciBus = -1, PciDevice = -1, PciFunction = -1;
@@ -197,85 +206,140 @@ int wrap_amdsysfs_get_gpucount(wrap_amdsysfs_handle* sysfsh, int* gpucount)
     return 0;
 }
 
+namespace
+{
+// Path of a file in the hwmon directory of a GPU
+std::string hwmonFile(wrap_amdsysfs_handle* sysfsh, int index, const char* file)
+{
+    return wrap_amdsysfs_root() + "/sys/class/drm/card" +
+           std::to_string(sysfsh->sysfs_device_id[index]) + "/device/hwmon/hwmon" +
+           std::to_string(sysfsh->sysfs_hwmon_id[index]) + "/" + file;
+}
+
+bool readHwmon(wrap_amdsysfs_handle* sysfsh, int index, const char* file, unsigned int& value)
+{
+    return getFileContentValue(hwmonFile(sysfsh, index, file).c_str(), value);
+}
+
+std::string readLine(const std::string& path)
+{
+    std::ifstream ifs(path, std::ios::binary);
+    std::string line;
+    std::getline(ifs, line);
+    boost::algorithm::trim(line);
+    return line;
+}
+
+// Temperature (C) of the hwmon sensor labelled _label ("edge", "junction",
+// "mem"), or of temp<_fallback> on kernels without labels
+unsigned int labelledTempC(wrap_amdsysfs_handle* sysfsh, int index, const char* _label, int _fallback)
+{
+    bool anyLabel = false;
+    for (int i = 1; i <= 3; i++)
+    {
+        std::string label =
+            readLine(hwmonFile(sysfsh, index, ("temp" + std::to_string(i) + "_label").c_str()));
+        anyLabel = anyLabel || !label.empty();
+        if (label == _label)
+        {
+            unsigned int milli = 0;
+            readHwmon(sysfsh, index, ("temp" + std::to_string(i) + "_input").c_str(), milli);
+            return milli / 1000;
+        }
+    }
+    if (anyLabel)
+        return 0;
+    unsigned int milli = 0;
+    readHwmon(sysfsh, index, ("temp" + std::to_string(_fallback) + "_input").c_str(), milli);
+    return milli / 1000;
+}
+
+bool validIndex(wrap_amdsysfs_handle* sysfsh, int index)
+{
+    return index >= 0 && index < sysfsh->sysfs_gpucount;
+}
+}  // namespace
+
 int wrap_amdsysfs_get_tempC(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* tempC)
 {
-    if (index < 0 || index >= sysfsh->sysfs_gpucount)
+    if (!validIndex(sysfsh, index))
         return -1;
+    unsigned int t = labelledTempC(sysfsh, index, "edge", 1);
+    if (t > 0)
+        *tempC = t;
+    return 0;
+}
 
-    int gpuindex = sysfsh->sysfs_device_id[index];
-
-    int hwmonindex = sysfsh->sysfs_hwmon_id[index];
-    if (hwmonindex < 0)
+int wrap_amdsysfs_get_extra_tempsC(
+    wrap_amdsysfs_handle* sysfsh, int index, unsigned int* junctionC, unsigned int* memC)
+{
+    if (!validIndex(sysfsh, index))
         return -1;
-
-    char dbuf[120];
-    snprintf(
-        dbuf, 120, "/sys/class/drm/card%d/device/hwmon/hwmon%d/temp1_input", gpuindex, hwmonindex);
-
-    unsigned int temp = 0;
-    getFileContentValue(dbuf, temp);
-
-    if (temp > 0)
-        *tempC = temp / 1000;
-
+    *junctionC = labelledTempC(sysfsh, index, "junction", 2);
+    *memC = labelledTempC(sysfsh, index, "mem", 3);
     return 0;
 }
 
 int wrap_amdsysfs_get_fanpcnt(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* fanpcnt)
 {
-    if (index < 0 || index >= sysfsh->sysfs_gpucount)
-        return -1;
-
-    int gpuindex = sysfsh->sysfs_device_id[index];
-    int hwmonindex = sysfsh->sysfs_hwmon_id[index];
-    if (hwmonindex < 0)
+    if (!validIndex(sysfsh, index))
         return -1;
 
     unsigned int pwm = 0, pwmMax = 255, pwmMin = 0;
+    if (readHwmon(sysfsh, index, "pwm1", pwm))
+    {
+        readHwmon(sysfsh, index, "pwm1_max", pwmMax);
+        readHwmon(sysfsh, index, "pwm1_min", pwmMin);
+        if (pwmMax > pwmMin)
+        {
+            pwm = std::min(std::max(pwm, pwmMin), pwmMax);
+            *fanpcnt = (unsigned int)(double(pwm - pwmMin) / double(pwmMax - pwmMin) * 100.0);
+            return 0;
+        }
+    }
 
-    char dbuf[120];
-    snprintf(dbuf, 120, "/sys/class/drm/card%d/device/hwmon/hwmon%d/pwm1", gpuindex, hwmonindex);
-    getFileContentValue(dbuf, pwm);
-
-    snprintf(
-        dbuf, 120, "/sys/class/drm/card%d/device/hwmon/hwmon%d/pwm1_max", gpuindex, hwmonindex);
-    getFileContentValue(dbuf, pwmMax);
-
-    snprintf(
-        dbuf, 120, "/sys/class/drm/card%d/device/hwmon/hwmon%d/pwm1_min", gpuindex, hwmonindex);
-    getFileContentValue(dbuf, pwmMin);
-
-    *fanpcnt = (unsigned int)(double(pwm - pwmMin) / double(pwmMax - pwmMin) * 100.0);
-    return 0;
+    // GPUs whose firmware controls the fan only expose its speed
+    unsigned int rpm = 0, rpmMax = 0;
+    if (readHwmon(sysfsh, index, "fan1_input", rpm) && readHwmon(sysfsh, index, "fan1_max", rpmMax) &&
+        rpmMax > 0)
+    {
+        *fanpcnt = std::min(100u, (unsigned int)(double(rpm) / double(rpmMax) * 100.0));
+        return 0;
+    }
+    return -1;
 }
 
 int wrap_amdsysfs_get_power_usage(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* milliwatts)
 {
+    if (!validIndex(sysfsh, index))
+        return -1;
+
+    // hwmon reports microwatts: power1_average on most GPUs, power1_input on newer ones
+    unsigned int micro = 0;
+    if ((readHwmon(sysfsh, index, "power1_average", micro) && micro) ||
+        (readHwmon(sysfsh, index, "power1_input", micro) && micro))
+    {
+        *milliwatts = micro / 1000;
+        return 0;
+    }
+
+    // Old kernels: debugfs (needs root)
     try
     {
-        if (index < 0 || index >= sysfsh->sysfs_gpucount)
-            return -1;
-
-        int gpuindex = sysfsh->sysfs_device_id[index];
-
-        char dbuf[120];
-        snprintf(dbuf, 120, "/sys/kernel/debug/dri/%d/amdgpu_pm_info", gpuindex);
-
+        char dbuf[512];
+        snprintf(dbuf, sizeof(dbuf), "%s/sys/kernel/debug/dri/%d/amdgpu_pm_info",
+            wrap_amdsysfs_root().c_str(), sysfsh->sysfs_device_id[index]);
         std::ifstream ifs(dbuf, std::ios::binary);
         std::string line;
-
+        static const std::regex regex(R"(([\d|\.]+) W \(average GPU\))");
         while (std::getline(ifs, line))
         {
             std::smatch sm;
-            std::regex regex(R"(([\d|\.]+) W \(average GPU\))");
-            if (std::regex_search(line, sm, regex))
+            if (std::regex_search(line, sm, regex) && sm.size() == 2)
             {
-                if (sm.size() == 2)
-                {
-                    double watt = atof(sm.str(1).c_str());
-                    *milliwatts = (unsigned int)(watt * 1000);
-                    return 0;
-                }
+                double watt = atof(sm.str(1).c_str());
+                *milliwatts = (unsigned int)(watt * 1000);
+                return 0;
             }
         }
     }
@@ -283,6 +347,27 @@ int wrap_amdsysfs_get_power_usage(wrap_amdsysfs_handle* sysfsh, int index, unsig
     {
         cwarn << "Error in amdsysfs_get_power_usage: " << ex.what();
     }
-
     return -1;
+}
+
+int wrap_amdsysfs_get_clocks(
+    wrap_amdsysfs_handle* sysfsh, int index, unsigned int* coreMHz, unsigned int* memMHz)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    unsigned int hz = 0;
+    *coreMHz = readHwmon(sysfsh, index, "freq1_input", hz) ? hz / 1000000 : 0;
+    *memMHz = readHwmon(sysfsh, index, "freq2_input", hz) ? hz / 1000000 : 0;
+    return 0;
+}
+
+int wrap_amdsysfs_get_power_limit(wrap_amdsysfs_handle* sysfsh, int index, unsigned int* milliwatts)
+{
+    if (!validIndex(sysfsh, index))
+        return -1;
+    unsigned int micro = 0;
+    if (!readHwmon(sysfsh, index, "power1_cap", micro) || !micro)
+        return -1;
+    *milliwatts = micro / 1000;
+    return 0;
 }

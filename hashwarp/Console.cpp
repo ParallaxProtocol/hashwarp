@@ -109,11 +109,30 @@ std::vector<std::string> statsTable(
     Scale sc = scaleFor(std::max<double>(_t.farm.hashrate, _t.farm.hashrate900));
     std::string u = sc.unit;
 
+    // Optional columns, shown when any GPU reports them
+    bool showHot = false, showMem = false, showClocks = false;
+    for (const auto& m : _t.miners)
+    {
+        showHot = showHot || m.sensors.hotspotC;
+        showMem = showMem || m.sensors.memTempC;
+        showClocks = showClocks || m.sensors.coreMHz;
+    }
+    auto temp = [](int _c) { return _c ? std::to_string(_c) + "C" : std::string("-"); };
+
     std::ostringstream h;
     h << EthWhiteBold << pad("GPU", 4, true) << pad("Name", 26, true) << pad(u, 10) << pad("60s", 9)
       << pad("15m", 9) << pad("Shares", 12);
     if (_t.hwmon)
-        h << pad("Temp", 6) << pad("Fan", 5) << pad("Power", 7) << pad("kh/W", 7);
+    {
+        h << pad("Temp", 6);
+        if (showHot)
+            h << pad("Hot", 6);
+        if (showMem)
+            h << pad("Mem", 6);
+        h << pad("Fan", 5) << pad("Power", 7) << pad("kh/W", 7);
+        if (showClocks)
+            h << pad("Clocks", 12);
+    }
     h << EthReset;
     lines.push_back(h.str());
 
@@ -135,11 +154,20 @@ std::vector<std::string> statsTable(
           << pad(fixed(m.hashrate900 / sc.divisor), 9) << pad(shares(m.solutions), 12);
         if (_t.hwmon)
         {
-            l << pad(m.sensors.tempC ? std::to_string(m.sensors.tempC) + "C" : "-", 6)
-              << pad(m.sensors.tempC ? std::to_string(m.sensors.fanP) + "%" : "-", 5)
+            l << pad(temp(m.sensors.tempC), 6);
+            if (showHot)
+                l << pad(temp(m.sensors.hotspotC), 6);
+            if (showMem)
+                l << pad(temp(m.sensors.memTempC), 6);
+            l << pad(m.sensors.tempC ? std::to_string(m.sensors.fanP) + "%" : "-", 5)
               << pad(m.sensors.powerW > 0 ? fixed(m.sensors.powerW, 0) + "W" : "-", 7)
               << pad(m.sensors.powerW > 0 ? fixed(m.hashrate / 1e3 / m.sensors.powerW, 0) : "-",
                      7);
+            if (showClocks)
+                l << pad(m.sensors.coreMHz ? std::to_string(m.sensors.coreMHz) + "/" +
+                                                 std::to_string(m.sensors.memMHz) :
+                                             "-",
+                    12);
             totalPower += m.sensors.powerW;
         }
         lines.push_back(l.str());
@@ -153,7 +181,8 @@ std::vector<std::string> statsTable(
           << pad(fixed(_t.farm.hashrate60 / sc.divisor), 9)
           << pad(fixed(_t.farm.hashrate900 / sc.divisor), 9) << pad(shares(_t.farm.solutions), 12);
         if (_t.hwmon && totalPower > 0)
-            l << pad("", 11) << pad(fixed(totalPower, 0) + "W", 7)
+            l << pad("", 11 + (showHot ? 6 : 0) + (showMem ? 6 : 0))
+              << pad(fixed(totalPower, 0) + "W", 7)
               << pad(fixed(_t.farm.hashrate / 1e3 / totalPower, 0), 7);
         l << EthReset;
         lines.push_back(l.str());

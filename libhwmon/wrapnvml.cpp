@@ -19,6 +19,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "wrapnvml.h"
 
@@ -88,6 +89,12 @@ wrap_nvml_handle* wrap_nvml_create()
     nvmlh->nvmlDeviceGetPowerUsage = (wrap_nvmlReturn_t(*)(
         wrap_nvmlDevice_t, unsigned int*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetPowerUsage");
     nvmlh->nvmlShutdown = (wrap_nvmlReturn_t(*)())wrap_dlsym(nvmlh->nvml_dll, "nvmlShutdown");
+    nvmlh->nvmlDeviceGetClockInfo = (wrap_nvmlReturn_t(*)(wrap_nvmlDevice_t, int,
+        unsigned int*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetClockInfo");
+    nvmlh->nvmlDeviceGetEnforcedPowerLimit = (wrap_nvmlReturn_t(*)(wrap_nvmlDevice_t,
+        unsigned int*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetEnforcedPowerLimit");
+    nvmlh->nvmlDeviceGetFieldValues = (wrap_nvmlReturn_t(*)(wrap_nvmlDevice_t, int,
+        wrap_nvmlFieldValue_t*))wrap_dlsym(nvmlh->nvml_dll, "nvmlDeviceGetFieldValues");
 
     if (nvmlh->nvmlInit == nullptr || nvmlh->nvmlShutdown == nullptr ||
         nvmlh->nvmlDeviceGetCount == nullptr || nvmlh->nvmlDeviceGetHandleByIndex == nullptr ||
@@ -189,6 +196,65 @@ int wrap_nvml_get_power_usage(wrap_nvml_handle* nvmlh, int gpuindex, unsigned in
     if (nvmlh->nvmlDeviceGetPowerUsage(nvmlh->devs[gpuindex], milliwatts) != WRAPNVML_SUCCESS)
         return -1;
 
+    return 0;
+}
+
+int wrap_nvml_get_mem_tempC(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* tempC)
+{
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount || !nvmlh->nvmlDeviceGetFieldValues)
+        return -1;
+    wrap_nvmlFieldValue_t field;
+    memset(&field, 0, sizeof(field));
+    field.fieldId = 82; /* NVML_FI_DEV_MEMORY_TEMP */
+    if (nvmlh->nvmlDeviceGetFieldValues(nvmlh->devs[gpuindex], 1, &field) != WRAPNVML_SUCCESS ||
+        field.nvmlReturn != WRAPNVML_SUCCESS)
+        return -1;
+    /* nvmlValueType_t: 0 double, 1 uint, 2 ulong, 3 ulonglong, 4 slonglong */
+    long long v;
+    switch (field.valueType)
+    {
+    case 0:
+        v = (long long)field.value.dVal;
+        break;
+    case 1:
+        v = field.value.uiVal;
+        break;
+    case 2:
+        v = (long long)field.value.ulVal;
+        break;
+    case 4:
+        v = field.value.sllVal;
+        break;
+    default:
+        v = (long long)field.value.ullVal;
+    }
+    if (v <= 0 || v > 200)
+        return -1;
+    *tempC = (unsigned int)v;
+    return 0;
+}
+
+int wrap_nvml_get_clocks(
+    wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* coreMHz, unsigned int* memMHz)
+{
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount || !nvmlh->nvmlDeviceGetClockInfo)
+        return -1;
+    if (nvmlh->nvmlDeviceGetClockInfo(nvmlh->devs[gpuindex], 0 /* NVML_CLOCK_GRAPHICS */,
+            coreMHz) != WRAPNVML_SUCCESS)
+        *coreMHz = 0;
+    if (nvmlh->nvmlDeviceGetClockInfo(nvmlh->devs[gpuindex], 2 /* NVML_CLOCK_MEM */, memMHz) !=
+        WRAPNVML_SUCCESS)
+        *memMHz = 0;
+    return 0;
+}
+
+int wrap_nvml_get_power_limit(wrap_nvml_handle* nvmlh, int gpuindex, unsigned int* milliwatts)
+{
+    if (gpuindex < 0 || gpuindex >= nvmlh->nvml_gpucount || !nvmlh->nvmlDeviceGetEnforcedPowerLimit)
+        return -1;
+    if (nvmlh->nvmlDeviceGetEnforcedPowerLimit(nvmlh->devs[gpuindex], milliwatts) !=
+        WRAPNVML_SUCCESS)
+        return -1;
     return 0;
 }
 

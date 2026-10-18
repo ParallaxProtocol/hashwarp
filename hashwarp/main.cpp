@@ -286,11 +286,15 @@ public:
         m_FarmSettings.hwMon = m_opts.noHwmon ? 0 : 2;
         if (m_opts.legacyHwmon >= 0)
             m_FarmSettings.hwMon = (unsigned)m_opts.legacyHwmon;
-        bool tempControl = std::any_of(m_opts.tempStop.begin(), m_opts.tempStop.end(),
-            [](unsigned t) { return t != 0; });
+        m_FarmSettings.shutdownTemp = m_opts.shutdownTemp;
+        auto anySet = [](const std::vector<unsigned>& _v) {
+            return std::any_of(_v.begin(), _v.end(), [](unsigned t) { return t != 0; });
+        };
+        bool tempControl =
+            anySet(m_opts.tempStop) || anySet(m_opts.memTempStop) || m_opts.shutdownTemp;
         if (tempControl && !m_FarmSettings.hwMon)
         {
-            warnings.push_back("--temp-stop needs hardware monitoring: ignoring --no-hwmon");
+            warnings.push_back("Temperature limits need hardware monitoring: ignoring --no-hwmon");
             m_FarmSettings.hwMon = 2;
         }
         g_exitOnError = m_opts.exitOnError;
@@ -589,6 +593,10 @@ private:
             s.tempResume = hashwarp::perGpu(m_opts.tempResume, k);
             if (s.tempStop && !s.tempResume)
                 s.tempResume = s.tempStop - 15;
+            s.memTempStop = hashwarp::perGpu(m_opts.memTempStop, k);
+            s.memTempResume = hashwarp::perGpu(m_opts.memTempResume, k);
+            if (s.memTempStop && !s.memTempResume)
+                s.memTempResume = s.memTempStop - 10;
         }
 
         // Count of subscribed devices

@@ -143,7 +143,7 @@ Farm::Farm(std::map<std::string, DeviceDescriptor>& _DevicesCollection, FarmSett
                 std::string uniqueId;
                 oss << std::setfill('0') << std::setw(2) << std::hex
                     << (unsigned int)nvmlh->nvml_pci_bus_id[i] << ":" << std::setw(2)
-                    << (unsigned int)(nvmlh->nvml_pci_device_id[i] >> 3) << ".0";
+                    << (unsigned int)(nvmlh->nvml_pci_device_id[i]) << ".0";
                 uniqueId = oss.str();
                 map_nvml_handle[uniqueId] = i;
             }
@@ -272,6 +272,135 @@ unsigned Farm::nonceSegmentWidth(unsigned _exSizeHexChars, size_t _miners, unsig
     if (!_exSizeHexChars && _userWidth && _userWidth < width)
         width = _userWidth;
     return width;
+}
+
+HwSensorsType Farm::readSensors(Miner& _miner)
+{
+    HwSensorsType sensors;
+    HwMonitorInfo hwInfo = _miner.hwmonInfo();
+    unsigned int tempC = 0, fanpcnt = 0, powerMw = 0, limitMw = 0, coreMHz = 0, memMHz = 0,
+                 memC = 0, hotspotC = 0;
+
+    // Maps the miner's PCI id to the index of the monitoring library once
+    auto mapIndex = [&](const std::map<string, int>& _map) {
+        int devIdx = hwInfo.deviceIndex;
+        if (devIdx == -1 && !hwInfo.devicePciId.empty())
+        {
+            auto it = _map.find(hwInfo.devicePciId);
+            devIdx = (it != _map.end()) ? it->second : -2;  // -2: don't try again
+            _miner.setHwmonDeviceIndex(devIdx);
+        }
+        return devIdx;
+    };
+
+    if (hwInfo.deviceType == HwMonitorInfoType::NVIDIA && nvmlh)
+    {
+        int devIdx = mapIndex(map_nvml_handle);
+        if (devIdx >= 0)
+        {
+            wrap_nvml_get_tempC(nvmlh, devIdx, &tempC);
+            wrap_nvml_get_fanpcnt(nvmlh, devIdx, &fanpcnt);
+            wrap_nvml_get_mem_tempC(nvmlh, devIdx, &memC);
+            wrap_nvml_get_clocks(nvmlh, devIdx, &coreMHz, &memMHz);
+            if (m_Settings.hwMon == 2)
+            {
+                wrap_nvml_get_power_usage(nvmlh, devIdx, &powerMw);
+                wrap_nvml_get_power_limit(nvmlh, devIdx, &limitMw);
+            }
+        }
+    }
+    else if (hwInfo.deviceType == HwMonitorInfoType::AMD)
+    {
+#if defined(__linux)
+        if (sysfsh)
+        {
+            int devIdx = mapIndex(map_amdsysfs_handle);
+            if (devIdx >= 0)
+            {
+                wrap_amdsysfs_get_tempC(sysfsh, devIdx, &tempC);
+                wrap_amdsysfs_get_extra_tempsC(sysfsh, devIdx, &hotspotC, &memC);
+                wrap_amdsysfs_get_fanpcnt(sysfsh, devIdx, &fanpcnt);
+                wrap_amdsysfs_get_clocks(sysfsh, devIdx, &coreMHz, &memMHz);
+                if (m_Settings.hwMon == 2)
+                {
+                    wrap_amdsysfs_get_power_usage(sysfsh, devIdx, &powerMw);
+                    wrap_amdsysfs_get_power_limit(sysfsh, devIdx, &limitMw);
+                }
+            }
+        }
+#else
+        if (adlh)  // Windows only for AMD
+        {
+            int devIdx = mapIndex(map_adl_handle);
+            if (devIdx >= 0)
+            {
+                wrap_adl_get_tempC(adlh, devIdx, &tempC);
+                wrap_adl_get_fanpcnt(adlh, devIdx, &fanpcnt);
+                if (m_Settings.hwMon == 2)
+                    wrap_adl_get_power_usage(adlh, devIdx, &powerMw);
+            }
+        }
+#endif
+    }
+
+    sensors.tempC = tempC;
+    sensors.hotspotC = hotspotC;
+    sensors.memTempC = memC;
+    sensors.fanP = fanpcnt;
+    sensors.powerW = powerMw / 1000.0;
+    sensors.powerLimitW = limitMw / 1000.0;
+    sensors.coreMHz = coreMHz;
+    sensors.memMHz = memMHz;
+    return sensors;
+}
+
+void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& _sensors)
+{
+    // Memory limits also apply to the hotspot on GPUs which don't report memory
+    int memTemp = _sensors.memTempC ? _sensors.memTempC : _sensors.hotspotC;
+    int hottest = std::max(std::max(_sensors.tempC, _sensors.hotspotC), _sensors.memTempC);
+
+    if (m_Settings.shutdownTemp && hottest >= (int)m_Settings.shutdownTemp)
+    {
+        cerror << "GPU " << _minerIdx << " reached " << hottest << "C (--shutdown-temp "
+               << m_Settings.shutdownTemp << "). Stopping hashwarp";
+        raise(SIGTERM);
+        return;
+    }
+
+    // Per GPU limits, falling back to the global (API settable) core limits
+    const DeviceSettings& ds = _miner.getDescriptor().settings;
+    unsigned tempStop = ds.tempStop ? ds.tempStop : m_Settings.tempStop;
+    unsigned tempResume = ds.tempStop ? ds.tempResume : m_Settings.tempStart;
+    unsigned memStop = ds.memTempStop;
+    unsigned memResume = ds.memTempResume;
+
+    bool paused = _miner.pauseTest(MinerPauseEnum::PauseDueToOverHeating);
+    bool coreHot = tempStop && _sensors.tempC && _sensors.tempC >= (int)tempStop;
+    bool memHot = memStop && memTemp && memTemp >= (int)memStop;
+    if (!paused && (coreHot || memHot))
+    {
+        if (coreHot)
+            cwarn << "GPU " << _minerIdx << " reached " << _sensors.tempC << "C, pausing until "
+                  << tempResume << "C";
+        else
+            cwarn << "GPU " << _minerIdx << " memory reached " << memTemp << "C, pausing until "
+                  << memResume << "C";
+        _miner.pause(MinerPauseEnum::PauseDueToOverHeating);
+        return;
+    }
+    if (paused)
+    {
+        bool coreCool = !tempStop || !_sensors.tempC || _sensors.tempC <= (int)tempResume;
+        bool memCool = !memStop || !memTemp || memTemp <= (int)memResume;
+        if (coreCool && memCool)
+        {
+            cnote << "GPU " << _minerIdx << " cooled down to " << _sensors.tempC << "C"
+                  << (memTemp ? " (memory " + std::to_string(memTemp) + "C)" : "")
+                  << ", resuming";
+            _miner.resume(MinerPauseEnum::PauseDueToOverHeating);
+        }
+    }
 }
 
 void Farm::pruneSamples(std::deque<Sample>& _samples, std::chrono::steady_clock::time_point _now)
@@ -600,121 +729,9 @@ void Farm::collectData(const boost::system::error_code& ec)
 
         if (m_Settings.hwMon)
         {
-            HwMonitorInfo hwInfo = miner->hwmonInfo();
-
-            unsigned int tempC = 0, fanpcnt = 0, powerW = 0;
-
-            if (hwInfo.deviceType == HwMonitorInfoType::NVIDIA && nvmlh)
-            {
-                int devIdx = hwInfo.deviceIndex;
-                if (devIdx == -1 && !hwInfo.devicePciId.empty())
-                {
-                    if (map_nvml_handle.find(hwInfo.devicePciId) != map_nvml_handle.end())
-                    {
-                        devIdx = map_nvml_handle[hwInfo.devicePciId];
-                        miner->setHwmonDeviceIndex(devIdx);
-                    }
-                    else
-                    {
-                        // This will prevent further tries to map
-                        miner->setHwmonDeviceIndex(-2);
-                    }
-                }
-
-                if (devIdx >= 0)
-                {
-                    wrap_nvml_get_tempC(nvmlh, devIdx, &tempC);
-                    wrap_nvml_get_fanpcnt(nvmlh, devIdx, &fanpcnt);
-
-                    if (m_Settings.hwMon == 2)
-                        wrap_nvml_get_power_usage(nvmlh, devIdx, &powerW);
-                }
-            }
-            else if (hwInfo.deviceType == HwMonitorInfoType::AMD)
-            {
-#if defined(__linux)
-                if (sysfsh)
-                {
-                    int devIdx = hwInfo.deviceIndex;
-                    if (devIdx == -1 && !hwInfo.devicePciId.empty())
-                    {
-                        if (map_amdsysfs_handle.find(hwInfo.devicePciId) !=
-                            map_amdsysfs_handle.end())
-                        {
-                            devIdx = map_amdsysfs_handle[hwInfo.devicePciId];
-                            miner->setHwmonDeviceIndex(devIdx);
-                        }
-                        else
-                        {
-                            // This will prevent further tries to map
-                            miner->setHwmonDeviceIndex(-2);
-                        }
-                    }
-
-                    if (devIdx >= 0)
-                    {
-                        wrap_amdsysfs_get_tempC(sysfsh, devIdx, &tempC);
-                        wrap_amdsysfs_get_fanpcnt(sysfsh, devIdx, &fanpcnt);
-
-                        if (m_Settings.hwMon == 2)
-                            wrap_amdsysfs_get_power_usage(sysfsh, devIdx, &powerW);
-                    }
-                }
-#else
-                if (adlh)  // Windows only for AMD
-                {
-                    int devIdx = hwInfo.deviceIndex;
-                    if (devIdx == -1 && !hwInfo.devicePciId.empty())
-                    {
-                        if (map_adl_handle.find(hwInfo.devicePciId) != map_adl_handle.end())
-                        {
-                            devIdx = map_adl_handle[hwInfo.devicePciId];
-                            miner->setHwmonDeviceIndex(devIdx);
-                        }
-                        else
-                        {
-                            // This will prevent further tries to map
-                            miner->setHwmonDeviceIndex(-2);
-                        }
-                    }
-
-                    if (devIdx >= 0)
-                    {
-                        wrap_adl_get_tempC(adlh, devIdx, &tempC);
-                        wrap_adl_get_fanpcnt(adlh, devIdx, &fanpcnt);
-
-                        if (m_Settings.hwMon == 2)
-                            wrap_adl_get_power_usage(adlh, devIdx, &powerW);
-                    }
-                }
-#endif
-            }
-
-
-            // If temperature control has been enabled (for this GPU or all)
-            // check threshold
-            const DeviceSettings& ds = miner->getDescriptor().settings;
-            unsigned tempStop = ds.tempStop ? ds.tempStop : m_Settings.tempStop;
-            unsigned tempResume = ds.tempStop ? ds.tempResume : m_Settings.tempStart;
-            if (tempStop && tempC)
-            {
-                bool paused = miner->pauseTest(MinerPauseEnum::PauseDueToOverHeating);
-                if (!paused && (tempC >= tempStop))
-                {
-                    cwarn << "GPU " << minerIdx << " reached " << tempC << "C, pausing until "
-                          << tempResume << "C";
-                    miner->pause(MinerPauseEnum::PauseDueToOverHeating);
-                }
-                if (paused && (tempC <= tempResume))
-                {
-                    cnote << "GPU " << minerIdx << " cooled down to " << tempC << "C, resuming";
-                    miner->resume(MinerPauseEnum::PauseDueToOverHeating);
-                }
-            }
-
-            m_telemetry.miners.at(minerIdx).sensors.tempC = tempC;
-            m_telemetry.miners.at(minerIdx).sensors.fanP = fanpcnt;
-            m_telemetry.miners.at(minerIdx).sensors.powerW = powerW / ((double)1000.0);
+            HwSensorsType sensors = readSensors(*miner);
+            checkTemperatures(*miner, minerIdx, sensors);
+            m_telemetry.miners.at(minerIdx).sensors = sensors;
         }
         m_telemetry.farm.hashrate = farm_hr;
     }

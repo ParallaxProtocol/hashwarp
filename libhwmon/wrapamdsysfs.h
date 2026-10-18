@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <string>
+
 typedef struct
 {
     int sysfs_gpucount;
@@ -38,3 +40,18 @@ int wrap_amdsysfs_get_fanpcnt(wrap_amdsysfs_handle* sysfsh, int index, unsigned 
 
 int wrap_amdsysfs_get_power_usage(
     wrap_amdsysfs_handle* sysfsh, int index, unsigned int* milliwatts);
+
+/* Junction (hotspot) and memory temperatures, 0 when the GPU doesn't report them */
+int wrap_amdsysfs_get_extra_tempsC(
+    wrap_amdsysfs_handle* sysfsh, int index, unsigned int* junctionC, unsigned int* memC);
+
+/* Current core (sclk) and memory (mclk) clocks in MHz */
+int wrap_amdsysfs_get_clocks(
+    wrap_amdsysfs_handle* sysfsh, int index, unsigned int* coreMHz, unsigned int* memMHz);
+
+/* Power cap */
+int wrap_amdsysfs_get_power_limit(
+    wrap_amdsysfs_handle* sysfsh, int index, unsigned int* milliwatts);
+
+/* Root of /sys (HASHWARP_SYSFS_ROOT environment variable, for tests) */
+std::string wrap_amdsysfs_root();

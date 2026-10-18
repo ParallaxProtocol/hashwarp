@@ -64,6 +64,9 @@ struct Options
     int legacyHwmon = -1;              // legacy --HWMON
     std::vector<unsigned> tempStop;    // per GPU, 0 = off
     std::vector<unsigned> tempResume;  // per GPU
+    std::vector<unsigned> memTempStop;    // per GPU, 0 = off
+    std::vector<unsigned> memTempResume;  // per GPU
+    unsigned shutdownTemp = 0;            // 0 = off
 
     // Logging and display
     std::string logFile;

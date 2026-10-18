@@ -139,9 +139,14 @@ struct SolutionAccountType
 
 struct HwSensorsType
 {
-    int tempC = 0;
+    int tempC = 0;        // Core (edge on AMD)
+    int hotspotC = 0;     // Junction / hotspot, 0 if not reported
+    int memTempC = 0;     // Memory, 0 if not reported
     int fanP = 0;
     double powerW = 0.0;
+    double powerLimitW = 0.0;
+    unsigned coreMHz = 0;
+    unsigned memMHz = 0;
     string str()
     {
         string _ret = to_string(tempC) + "C " + to_string(fanP) + "%";
@@ -170,8 +175,10 @@ struct DeviceSettings
     unsigned cuStreams = 0;
     unsigned clGlobalWorkMultiplier = 0;
     unsigned clLocalWorkSize = 0;
-    unsigned tempStop = 0;    // Pause at this core temperature
-    unsigned tempResume = 0;  // Resume at this core temperature
+    unsigned tempStop = 0;       // Pause at this core temperature
+    unsigned tempResume = 0;     // Resume at this core temperature
+    unsigned memTempStop = 0;    // Pause at this memory (or hotspot) temperature
+    unsigned memTempResume = 0;  // Resume at this memory (or hotspot) temperature
 };
 
 struct DeviceDescriptor
