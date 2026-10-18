@@ -1351,7 +1351,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                     {
                         try
                         {
-                            m_current.block =
+                            unsigned long block =
                                 std::stoul(jPrm.get(Json::Value::ArrayIndex(prmIdx), "").asString(),
                                     nullptr, 16);
                             /*
@@ -1361,8 +1361,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                             assuming a (very fast) blocktime of 10s:
                             ==> in 50 years we get 157680000 (=0x9660180) blocks
                             */
-                            if (m_current.block > 0x9660180)
-                                throw new std::exception();
+                            if (block <= 0x9660180)
+                                m_current.block = static_cast<int>(block);
                         }
                         catch (const std::exception&)
                         {

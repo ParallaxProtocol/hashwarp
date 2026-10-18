@@ -426,6 +426,19 @@ void EthGetworkClient::processResponse(Json::Value& JRes)
                 newWp.seed = h256(JPrm.get(Json::Value::ArrayIndex(1), "").asString());
                 newWp.boundary = h256(JPrm.get(Json::Value::ArrayIndex(2), "").asString());
                 newWp.job = newWp.header.hex();
+
+                // Parallax nodes append the block number being mined
+                if (JPrm.size() > 3 && JPrm[3].isString())
+                {
+                    try
+                    {
+                        newWp.block = (int)std::stoul(JPrm[3].asString(), nullptr, 16);
+                    }
+                    catch (const std::exception&)
+                    {
+                        newWp.block = -1;
+                    }
+                }
                 if (m_current.header != newWp.header)
                 {
                     m_current = newWp;

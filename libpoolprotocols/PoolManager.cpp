@@ -180,13 +180,14 @@ void PoolManager::setClientHandlers()
             m_epochChanges.fetch_add(1, std::memory_order_relaxed);
 
             // If epoch is valued in workpackage take it
+            // otherwise derive it from the seed hash, which is authoritative,
+            // and fall back to the block number only if the seed is unknown
             if (wp.epoch == -1)
             {
-                if (m_currentWp.block >= 0)
-                    m_currentWp.epoch = m_currentWp.block / 30000;
-                else
-                    m_currentWp.epoch = xhash::find_epoch_number(
-                        xhash::hash256_from_bytes(m_currentWp.seed.data()));
+                m_currentWp.epoch = xhash::find_epoch_number(
+                    xhash::hash256_from_bytes(m_currentWp.seed.data()));
+                if (m_currentWp.epoch == -1 && m_currentWp.block >= 0)
+                    m_currentWp.epoch = xhash::get_epoch_number(m_currentWp.block);
             }
         }
         else
