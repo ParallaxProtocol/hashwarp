@@ -387,8 +387,9 @@ void CLMiner::workLoop()
                 startNonce = w.startNonce;
 
                 // Update header constant buffer.
+                // Blocking: w is local to this iteration and must outlive the copy
                 m_queue[0].enqueueWriteBuffer(
-                    m_header[0], CL_FALSE, 0, w.header.size, w.header.data());
+                    m_header[0], CL_TRUE, 0, w.header.size, w.header.data());
                 // zero the result count
                 m_queue[0].enqueueWriteBuffer(m_searchBuffer[0], CL_FALSE,
                     offsetof(SearchResults, count),
@@ -786,6 +787,7 @@ bool CLMiner::initEpoch_internal()
 
         addDefinition(code, "WORKSIZE", m_settings.localWorkSize);
         addDefinition(code, "ACCESSES", 64);
+        addDefinition(code, "DAG_NODES", m_dagItems * 2);  // 64 byte nodes
         addDefinition(code, "MAX_OUTPUTS", c_maxSearchResults);
         addDefinition(code, "PLATFORM", static_cast<unsigned>(m_deviceDescriptor.clPlatformType));
         addDefinition(code, "COMPUTE", computeCapability);
@@ -824,16 +826,16 @@ bool CLMiner::initEpoch_internal()
             if (m_epochContext.dagNumItems & 1)
             {
                 m_dag.push_back(
-                    cl::Buffer(m_context[0], CL_MEM_READ_ONLY, m_epochContext.dagSize / 2 + 64));
+                    cl::Buffer(m_context[0], CL_MEM_READ_WRITE, m_epochContext.dagSize / 2 + 64));
                 m_dag.push_back(
-                    cl::Buffer(m_context[0], CL_MEM_READ_ONLY, m_epochContext.dagSize / 2 - 64));
+                    cl::Buffer(m_context[0], CL_MEM_READ_WRITE, m_epochContext.dagSize / 2 - 64));
             }
             else
             {
                 m_dag.push_back(
-                    cl::Buffer(m_context[0], CL_MEM_READ_ONLY, (m_epochContext.dagSize) / 2));
+                    cl::Buffer(m_context[0], CL_MEM_READ_WRITE, (m_epochContext.dagSize) / 2));
                 m_dag.push_back(
-                    cl::Buffer(m_context[0], CL_MEM_READ_ONLY, (m_epochContext.dagSize) / 2));
+                    cl::Buffer(m_context[0], CL_MEM_READ_WRITE, (m_epochContext.dagSize) / 2));
             }
             cllog << "Creating light cache buffer, size: "
                   << dev::getFormattedMemory((double)m_epochContext.lightSize);
@@ -889,7 +891,7 @@ bool CLMiner::initEpoch_internal()
         // create mining buffers
         cllog << "Creating mining buffer";
         m_searchBuffer.clear();
-        m_searchBuffer.emplace_back(m_context[0], CL_MEM_WRITE_ONLY, sizeof(SearchResults));
+        m_searchBuffer.emplace_back(m_context[0], CL_MEM_READ_WRITE, sizeof(SearchResults));
 
         m_dagKernel.setArg(1, m_light[0]);
         m_dagKernel.setArg(2, m_dag[0]);

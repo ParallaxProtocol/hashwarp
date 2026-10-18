@@ -544,12 +544,16 @@ __kernel void GenerateDAG(uint start, __global const uint16 *_Cache, __global ui
 
     SHA3_512(DAGNode.qwords);
 
+    // The last work group may extend past the end of the dag
+    // (barriers above must still be reached by all work items)
+    if (NodeIdx >= DAG_NODES)
+        return;
+
     __global Node *DAG;
     if (NodeIdx & 2)
         DAG = (__global Node *) _DAG1;
     else
         DAG = (__global Node *) _DAG0;
     NodeIdx &= ~2;
-    //if (NodeIdx < DAG_SIZE)
     DAG[(NodeIdx / 2) | (NodeIdx & 1)] = DAGNode;
 }

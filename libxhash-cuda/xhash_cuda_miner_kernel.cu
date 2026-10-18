@@ -81,6 +81,11 @@ __global__ void xhash_calculate_dag_item(uint32_t start)
         }
     }
     SHA3_512(dag_node_mem);
+
+    // Threads exit above in groups of 4 to keep the shuffles complete, so the
+    // last group may hold nodes past the end of the dag: don't store them
+    if (node_index >= 2 * d_dag_size)
+        return;
     hash64_t* dag_nodes = (hash64_t*)d_dag;
     copy(dag_nodes[node_index].uint4s, dag_node.uint4s, 4);
 }
@@ -92,7 +97,7 @@ void xhash_generate_dag(
     const uint32_t run = gridSize * blockSize;
 
     uint32_t base;
-    for (base = 0; base <= work - run; base += run)
+    for (base = 0; base + run <= work; base += run)
     {
         xhash_calculate_dag_item<<<gridSize, blockSize, 0, stream>>>(base);
         CUDA_SAFE_CALL(cudaDeviceSynchronize());
