@@ -65,8 +65,8 @@ def main():
     mockout = mocklog.read()
 
     out = ANSI.sub("", out)
-    accepted = len(re.findall(r"\*\*Accepted", out))
-    rejected = len(re.findall(r"\*\*Rejected", out))
+    accepted = len(re.findall(r"Accepted(?: \(stale\))? GPU\d+|BLOCK FOUND by GPU\d+", out))
+    rejected = len(re.findall(r"Rejected GPU\d+", out))
     incorrect = len(re.findall(r"gave incorrect result", out))
     epoch = re.search(r"Epoch : (\d+)", out)
 
@@ -78,7 +78,7 @@ def main():
         ok = False
 
     if args.protocol == "stratum":
-        rates = [float(r) for r in re.findall(r" A\d+(?::R\d+)?(?::F\d+)? ([\d.]+) Mh", out)]
+        rates = [float(r) for r in re.findall(r" ([\d.]+) Mh/s \(60s", out)]
         rates = [r for r in rates if r > 0]
         if rates:
             mined_seconds = args.seconds - 10  # roughly: startup and DAG generation
