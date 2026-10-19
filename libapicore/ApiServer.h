@@ -9,6 +9,7 @@
 #include <json/json.h>
 
 #include "HttpApi.h"
+#include "Rigs.h"
 
 #include <libparallaxcore/Farm.h>
 #include <libparallaxcore/Miner.h>
@@ -25,7 +26,7 @@ class ApiConnection
 public:
 
     ApiConnection(boost::asio::io_service::strand& _strand, int id, bool readonly, string password,
-        bool loopbackOnly);
+        bool loopbackOnly, const hashwarp::api::RigPoller* _rigs, bool _mining);
 
     ~ApiConnection() = default;
 
@@ -60,6 +61,7 @@ private:
     bool httpAuthorized(const hashwarp::api::HttpRequest& _request);
     static bool isLoopbackHost(const std::string& _host);
     Json::Value getSummary();
+    Json::Value getRigs();  // /api/v1/rigs: this rig (unless --monitor) and the others
     std::string control(const Json::Value& _body);  // Error message, empty on success
 
     Disconnected m_onDisconnected;
@@ -79,6 +81,8 @@ private:
 
     bool m_is_authenticated = true;
     bool m_loopbackOnly = false;  // Listening on a loopback address only
+    const hashwarp::api::RigPoller* m_rigs = nullptr;  // Other rigs (--rig), if any
+    bool m_mining = true;  // false with --monitor: there is no Farm nor PoolManager
 };
 
 
@@ -89,6 +93,13 @@ public:
     bool isRunning() { return m_running.load(std::memory_order_relaxed); };
     void start();
     void stop();
+
+    /// Serves the other rigs of _rigs too. _mining: whether this hashwarp mines (not --monitor)
+    void setRigs(const hashwarp::api::RigPoller* _rigs, bool _mining)
+    {
+        m_rigs = _rigs;
+        m_mining = _mining;
+    }
 
 private:
     void begin_accept();
@@ -105,4 +116,6 @@ private:
     tcp::acceptor m_acceptor;
     boost::asio::io_service::strand m_io_strand;
     std::vector<std::shared_ptr<ApiConnection>> m_sessions;
+    const hashwarp::api::RigPoller* m_rigs = nullptr;
+    bool m_mining = true;
 };

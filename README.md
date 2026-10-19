@@ -20,7 +20,7 @@ or solo on your own node.
 * **Overclocking**: memory and core clocks, power limits and fans per GPU (NVIDIA, and AMD on
   Linux), profiles, and `--oc-tune`, which finds the best memory clock and the most efficient core
   clock of each GPU
-* **Monitoring**: a web dashboard, a JSON API and Prometheus metrics
+* **Monitoring**: a web dashboard of one rig or all of them, a JSON API and Prometheus metrics
 * **Rig operating systems**: HiveOS and mmpOS packages, a Docker image
 
 ## Table of Contents
@@ -98,8 +98,9 @@ the order of `--gpu-id` (or of `--list-devices`); a single value applies to all 
 
 `--api-bind 127.0.0.1:21550` serves a dashboard on http://127.0.0.1:21550, a JSON summary on
 `/api/v1/summary` and Prometheus metrics on `/metrics`. Add `--api-token` to require a token and
-`--api-allow-control` to allow pausing, resuming and restarting from the API. See
-[docs/API.md](docs/API.md).
+`--api-allow-control` to allow pausing, resuming and restarting from the API. With
+`--rig rig2=10.0.0.12 --rig rig3=10.0.0.13` the dashboard shows those rigs too, and `--monitor`
+serves that view without mining. See [docs/API.md](docs/API.md).
 
 ## Safety
 

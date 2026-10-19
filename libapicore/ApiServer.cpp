@@ -326,7 +326,7 @@ void ApiServer::begin_accept()
 
     auto session =
         std::make_shared<ApiConnection>(m_io_strand, ++lastSessionId, m_readonly, m_password,
-            boost::asio::ip::address::from_string(m_address).is_loopback());
+            boost::asio::ip::address::from_string(m_address).is_loopback(), m_rigs, m_mining);
     m_acceptor.async_accept(
         session->socket(), m_io_strand.wrap(boost::bind(&ApiServer::handle_accept, this, session,
                                boost::asio::placeholders::error)));
@@ -384,13 +384,15 @@ void ApiConnection::disconnect()
 }
 
 ApiConnection::ApiConnection(boost::asio::io_service::strand& _strand, int id, bool readonly,
-    string password, bool loopbackOnly)
+    string password, bool loopbackOnly, const hashwarp::api::RigPoller* _rigs, bool _mining)
   : m_sessionId(id),
     m_socket(g_io_service),
     m_io_strand(_strand),
     m_readonly(readonly),
     m_password(std::move(password)),
-    m_loopbackOnly(loopbackOnly)
+    m_loopbackOnly(loopbackOnly),
+    m_rigs(_rigs),
+    m_mining(_mining)
 {
     m_jSwBuilder.settings_["indentation"] = "";
     if (!m_password.empty())
@@ -832,6 +834,12 @@ void ApiConnection::onRecvSocketDataCompleted(
             else
                 sendSocketData(handleHttp(request), true);
         }
+        else if (!m_mining)
+        {
+            // The JSON-RPC API reads the miner, which --monitor doesn't run
+            disconnect();
+            return;
+        }
         else
         {
             // We got a Json request
@@ -1104,7 +1112,26 @@ std::string ApiConnection::handleHttp(const hashwarp::api::HttpRequest& _request
             return get ? httpResponse(200, "text/html; charset=utf-8", c_dashboardHtml) :
                          httpResponse(405, "text/plain", "Use GET\n");
 
-        if (path == "/getstat1" || path == "/api/v1/summary" || path == "/metrics")
+        if (path == "/api/v1/rigs" || path == "/metrics")
+        {
+            if (!get)
+                return httpResponse(405, "text/plain", "Use GET\n");
+            if (!httpAuthorized(_request))
+                return unauthorized;
+            Json::Value rigs = getRigs();
+            if (path == "/metrics")
+                return httpResponse(200, "text/plain; version=0.0.4; charset=utf-8",
+                    (m_mining ? metricsFromSummary(getSummary()) : "") +
+                        (m_rigs ? metricsFromRigs(rigs["rigs"]) : ""));
+            return httpResponse(
+                200, "application/json", Json::writeString(m_jSwBuilder, rigs) + "\n");
+        }
+
+        if (!m_mining && (path == "/getstat1" || path == "/api/v1/summary" ||
+                             path == "/api/v1/control"))
+            return httpResponse(404, "text/plain", "Not mining: hashwarp runs with --monitor\n");
+
+        if (path == "/getstat1" || path == "/api/v1/summary")
         {
             if (!get)
                 return httpResponse(405, "text/plain", "Use GET\n");
@@ -1112,12 +1139,8 @@ std::string ApiConnection::handleHttp(const hashwarp::api::HttpRequest& _request
                 return unauthorized;
             if (path == "/getstat1")
                 return httpResponse(200, "text/html; charset=utf-8", getHttpMinerStatDetail());
-            Json::Value summary = getSummary();
-            if (path == "/metrics")
-                return httpResponse(
-                    200, "text/plain; version=0.0.4; charset=utf-8", metricsFromSummary(summary));
             return httpResponse(
-                200, "application/json", Json::writeString(m_jSwBuilder, summary) + "\n");
+                200, "application/json", Json::writeString(m_jSwBuilder, getSummary()) + "\n");
         }
 
         if (path == "/api/v1/control")
@@ -1188,6 +1211,31 @@ std::string ApiConnection::control(const Json::Value& _body)
     else
         return "action must be pause, resume or restart";
     return "";
+}
+
+Json::Value ApiConnection::getRigs()
+{
+    Json::Value ret;
+    ret["mining"] = m_mining;
+    ret["rigs"] = m_rigs ? m_rigs->rigs() : Json::Value(Json::arrayValue);
+    if (m_mining)
+    {
+        // This rig first
+        Json::Value self;
+        self["name"] = boost::asio::ip::host_name();
+        self["host"] = "";
+        self["local"] = true;
+        self["online"] = true;
+        self["error"] = "";
+        self["age"] = 0;
+        self["summary"] = getSummary();
+        Json::Value all(Json::arrayValue);
+        all.append(self);
+        for (const auto& r : ret["rigs"])
+            all.append(r);
+        ret["rigs"] = all;
+    }
+    return ret;
 }
 
 Json::Value ApiConnection::getSummary()

@@ -493,6 +493,13 @@ public:
 
     void execute()
     {
+#if API_CORE
+        if (m_opts.monitor)
+        {
+            doMonitor();
+            return;
+        }
+#endif
 #if ETH_XHASHCL
         if (m_minerType == MinerType::CL || m_minerType == MinerType::Mixed)
             CLMiner::enumDevices(m_DevicesCollection);
@@ -678,6 +685,8 @@ private:
                 "The API no longer allows control unless --api-allow-control is given");
         m_api_readonly = legacyReadOnly || !m_opts.apiAllowControl;
         m_api_password = m_opts.apiToken;
+        for (const auto& spec : m_opts.rigs)
+            m_rigs.push_back(hashwarp::api::parseRig(spec));
 
         // Control lets clients add pools and restart the miner. Never expose
         // that beyond the loopback interface without a secret.
@@ -843,6 +852,13 @@ private:
 #if API_CORE
 
         ApiServer api(m_api_address, m_api_readonly ? -m_api_port : m_api_port, m_api_password);
+        std::unique_ptr<hashwarp::api::RigPoller> rigs;
+        if (m_api_port && !m_rigs.empty())
+        {
+            rigs.reset(new hashwarp::api::RigPoller(g_io_service, m_rigs));
+            api.setRigs(rigs.get(), true);
+            rigs->start();
+        }
         if (m_api_port)
             api.start();
 
@@ -902,6 +918,8 @@ private:
         // Stop Api server
         if (api.isRunning())
             api.stop();
+        if (rigs)
+            rigs->stop();
 
 #endif
         if (PoolManager::p().isRunning())
@@ -910,6 +928,38 @@ private:
         cnote << "Stopped";
         return;
     }
+
+#if API_CORE
+    // --monitor: serves the dashboard of the other rigs until stopped, without mining
+    void doMonitor()
+    {
+        g_running = true;
+        signal(SIGINT, MinerCLI::signalHandler);
+        signal(SIGTERM, MinerCLI::signalHandler);
+
+        hashwarp::api::RigPoller rigs(g_io_service, m_rigs);
+        // Read only: there is no miner to control here
+        ApiServer api(m_api_address, -m_api_port, m_api_password);
+        api.setRigs(&rigs, false);
+        rigs.start();
+        api.start();
+        if (!api.isRunning())
+            return;
+        cnote << "Monitoring " << m_rigs.size() << (m_rigs.size() == 1 ? " rig" : " rigs")
+              << " · dashboard on http://"
+              << (m_api_address == "0.0.0.0" ? std::string("localhost") : m_api_address) << ":"
+              << m_api_port;
+
+        unique_lock<mutex> clilock(m_climtx);
+        while (g_running)
+            g_shouldstop.wait_for(clilock, std::chrono::seconds(1));
+        if (g_interrupted)
+            cnote << "Stopping (Ctrl+C)";
+        api.stop();
+        rigs.stop();
+        cnote << "Stopped";
+    }
+#endif
 
     // --oc-tune: searches each GPU's settings while mining offline, saves them and
     // returns whether every GPU could be tuned. The GPUs go back to their settings on exit
@@ -1255,6 +1305,7 @@ clogs(dev::NoteChannel, "tune")
     int m_api_port = 0;                  // API interface binding port (0 = off)
     bool m_api_readonly = true;          // Whether clients may control the miner
     string m_api_password;               // API interface write protection password
+    std::vector<hashwarp::api::RigAddress> m_rigs;  // other rigs shown on the dashboard
 #endif
 
 #if ETH_DBUS

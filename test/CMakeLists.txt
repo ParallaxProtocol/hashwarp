@@ -7,6 +7,7 @@ add_executable(hashwarp-unittests
   unittests/test_octune.cpp
   unittests/test_options.cpp
   unittests/test_httpapi.cpp
+  unittests/test_rigs.cpp
   unittests/test_log.cpp
   unittests/test_uri.cpp
   unittests/test_wizard.cpp

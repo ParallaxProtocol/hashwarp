@@ -49,6 +49,9 @@ bool secretEquals(const std::string& _a, const std::string& _b);
 /// Prometheus text format of an /api/v1/summary document
 std::string metricsFromSummary(const Json::Value& _summary);
 
+/// Prometheus text format of the rigs of /api/v1/rigs
+std::string metricsFromRigs(const Json::Value& _rigs);
+
 /// The single page dashboard served on /
 extern const char* const c_dashboardHtml;
 

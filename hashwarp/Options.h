@@ -106,6 +106,8 @@ struct Options
     int legacyApiPort = 0;
     std::string apiToken;
     bool apiAllowControl = false;
+    std::vector<std::string> rigs;  // other rigs' APIs for the dashboard: [name=][token@]host[:port]
+    bool monitor = false;           // only show the rigs on the dashboard, don't mine
 
     // Misc
     int benchmarkBlock = -1;  // >= 0: simulation mode on this block

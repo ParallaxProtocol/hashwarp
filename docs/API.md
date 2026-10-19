@@ -5,6 +5,7 @@ port. It's off by default.
 
 * [Enabling the API](#enabling-the-api)
 * [Dashboard](#dashboard)
+* [Several rigs](#several-rigs)
 * [HTTP API](#http-api)
 * [Prometheus](#prometheus)
 * [JSON-RPC](#json-rpc)
@@ -31,7 +32,55 @@ hashrate, shares, temperatures, fans, power and efficiency, refreshed every 5 se
 `--api-allow-control` it also has pause, resume and restart buttons. If a token is set the page asks
 for it and keeps it for the browser session.
 
+## Several rigs
+
+One dashboard can show all your rigs. Give the rig whose dashboard you open the others' API
+addresses with `--rig`; it reads their `/api/v1/summary` every 5 seconds (so the browser only talks
+to that one rig, and the other rigs' tokens stay on it):
+
+```sh
+hashwarp ... --api-bind 0.0.0.0:21550 --rig rig2=10.0.0.12 --rig rig3=s3cret@10.0.0.13:21550
+```
+
+A rig is `[name=][token@]host[:port]`: the name shown (the host by default), the rig's
+`--api-token` if it has one, and its `--api-bind` address (port 21550 by default). Repeat `--rig`,
+or separate rigs with commas; in the configuration file, `"rig": ["rig2=10.0.0.12", ...]`. The
+other rigs need `--api-bind` on an address this rig can reach, and hashwarp 2.0 or later.
+
+The dashboard then starts with a table of the rigs: status, hashrate, shares, GPUs, the hottest GPU,
+power, efficiency, pool and uptime, with the totals. Click a rig for its GPUs. A rig's status shows
+what needs a look: unreachable (with the reason and when it was last seen), not connected to its
+pool, paused GPUs, a GPU at 85°C or more, or more than 5% rejected shares. Hashwarp also logs when a
+rig goes offline and comes back.
+
+`--monitor` runs hashwarp without mining, only for this view, e.g. on a server or a laptop:
+
+```sh
+hashwarp --monitor --api-bind 0.0.0.0:21550 --rig rig1=10.0.0.11,rig2=10.0.0.12,rig3=10.0.0.13
+```
+
+The API of a monitor serves the dashboard, `/api/v1/rigs` and `/metrics` (`/api/v1/summary`,
+`/api/v1/control` and JSON-RPC answer 404 or close the connection: there is no miner).
+
 ## HTTP API
+
+### GET /api/v1/rigs
+
+This rig (unless `--monitor`) and the `--rig` rigs, as the dashboard shows them:
+
+```json
+{
+  "mining": true,
+  "rigs": [
+    {"name": "rig1", "host": "", "local": true, "online": true, "error": "", "age": 0, "summary": {...}},
+    {"name": "rig2", "host": "10.0.0.12:21550", "online": true, "error": "", "age": 3, "summary": {...}},
+    {"name": "rig3", "host": "10.0.0.13:21550", "online": false, "error": "Connection refused", "age": 120, "summary": {...}}
+  ]
+}
+```
+
+`summary` is the rig's last `/api/v1/summary` (kept while it's unreachable, absent if it never
+answered), `age` the seconds since then (-1: never), `error` why the last attempt failed.
 
 ### GET /api/v1/summary
 
@@ -136,6 +185,9 @@ scrape_configs:
 | `hashwarp_pool_switches_total` | | Pool switches |
 | `hashwarp_epoch`, `hashwarp_block_height` | | XHash epoch and height being mined |
 | `hashwarp_uptime_seconds`, `hashwarp_info` | `version` | |
+| `hashwarp_rig_up` | `rig` | With `--rig`: 1 when the rig's API answers |
+| `hashwarp_rig_hashrate`, `hashwarp_rig_power_watts` | `rig` | A rig's hashrate and GPU power draw |
+| `hashwarp_rig_shares_total` | `rig`, `result` | A rig's shares |
 
 ## JSON-RPC
 

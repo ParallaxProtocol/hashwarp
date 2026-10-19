@@ -517,6 +517,14 @@ void registerOptions(CLI::App& _app, Options& _o)
     _app.add_flag("--api-allow-control", _o.apiAllowControl,
             "Allow API clients to pause, restart and change pools")
         ->group(c_groupApi);
+    _app.add_option("--rig", _o.rigs,
+            "Show another rig on the dashboard: [name=][token@]host[:port] (port 21550 by "
+            "default). Repeat it, or separate rigs with commas")
+        ->delimiter(',')
+        ->group(c_groupApi);
+    _app.add_flag("--monitor", _o.monitor,
+            "Don't mine: only serve the dashboard of the --rig rigs (needs --api-bind)")
+        ->group(c_groupApi);
 
     // Other
     _app.set_config("-c,--config", "", "Read options from a JSON file (keys are option names)")
@@ -605,11 +613,17 @@ std::vector<std::string> validateOptions(Options& _o)
                 "--api-bind must be address:port, e.g. 127.0.0.1:21550 or 0.0.0.0:21550");
     }
 
+    if (_o.monitor && (_o.apiBind.empty() || _o.rigs.empty()))
+        throw std::invalid_argument(
+            "--monitor needs --api-bind for the dashboard and the rigs to show with --rig");
+    if (!_o.rigs.empty() && _o.apiBind.empty() && !_o.legacyApiPort)
+        warnings.push_back("--rig needs --api-bind: the rigs are shown on the dashboard");
+
     if (_o.soloRequested && _o.solo.empty())
         _o.solo = c_defaultSoloUrl;
 
     if (!_o.listDevices && _o.benchmarkBlock < 0 && !_o.selftestSeconds && _o.ocTune.empty() &&
-        !_o.ocReset && _o.saveConfig.empty() &&
+        !_o.ocReset && !_o.monitor && _o.saveConfig.empty() &&
         _o.pools.empty() && !_o.soloRequested)
         throw std::invalid_argument(
             "No pool configured: use --pool and --wallet, or --solo to mine on your own node");

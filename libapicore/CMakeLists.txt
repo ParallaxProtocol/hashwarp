@@ -1,6 +1,7 @@
 set(SOURCES
     ApiServer.h ApiServer.cpp
     HttpApi.h HttpApi.cpp
+    Rigs.h Rigs.cpp
 )
 
 add_library(apicore ${SOURCES})
