@@ -191,5 +191,14 @@ jobs:
           awk -v v="## $GITHUB_REF_NAME" '$0 == v { on = 1; next } on && /^## / { exit } on' \
             ../CHANGELOG.md > notes.md
           if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          # Labels name the files on the release page; the HiveOS archive's name must stay
+          # <name>-<version>.tar.gz, which HiveOS reads the miner and version from
           gh release create "$GITHUB_REF_NAME" --draft --title "Hashwarp $GITHUB_REF_NAME" \
-            "${notes[@]}" -R "$GITHUB_REPOSITORY" hashwarp-* SHA256SUMS
+            "${notes[@]}" -R "$GITHUB_REPOSITORY" \
+            "hashwarp-$GITHUB_REF_NAME-linux.tar.gz#Linux (glibc 2.28+)" \
+            "hashwarp-$GITHUB_REF_NAME-linux.tar.gz.sha256#Linux checksum" \
+            "hashwarp-$GITHUB_REF_NAME-windows.zip#Windows 10+" \
+            "hashwarp-$GITHUB_REF_NAME-windows.zip.sha256#Windows checksum" \
+            "hashwarp-${GITHUB_REF_NAME#v}.tar.gz#HiveOS package" \
+            "hashwarp-${GITHUB_REF_NAME#v}-mmpos.tgz#mmpOS package" \
+            "SHA256SUMS#SHA256SUMS (all files)"

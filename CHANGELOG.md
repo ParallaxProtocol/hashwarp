@@ -8,7 +8,8 @@ Hashwarp 2.0 is a rewrite of nearly everything around the XHash kernels: setup, 
 
 - **Linux**: `hashwarp-v2.0.0-linux.tar.gz`, for glibc 2.28 or newer (Ubuntu 20.04, Debian 10, RHEL 8 and later). Everything else is built in: no CUDA toolkit or OpenSSL needed.
 - **Windows**: `hashwarp-v2.0.0-windows.zip`, for Windows 10 or newer. The Visual C++ runtime is in the archive.
-- **HiveOS**: `hashwarp-2.0.0.tar.gz`. **mmpOS**: `hashwarp-2.0.0-mmpos.tgz`.
+- **HiveOS**: `hashwarp-2.0.0.tar.gz` (HiveOS needs this name). In the flight sheet choose the **Custom** miner and paste this file's link as the installation URL.
+- **mmpOS**: `hashwarp-2.0.0-mmpos.tgz`.
 
 One build per system mines on **NVIDIA** GPUs with CUDA (driver 525 or newer, every GPU from Pascal to Blackwell) and on **AMD** and other GPUs with OpenCL. There are no separate CUDA and OpenCL builds anymore.
 
