@@ -56,18 +56,27 @@ private:
             _f(*m_ws);
     }
 
-    // The handlers run on the io_service thread; they do nothing once the client is gone
+    // A handler that does nothing once the client is gone
+    template <class H>
+    struct Guarded
+    {
+        std::weak_ptr<bool> alive;
+        H handler;
+
+        // Only invocable as the handler is: Asio picks overloads by what a handler accepts
+        template <class... A, class = std::enable_if_t<std::is_invocable_v<H&, A&&...>>>
+        void operator()(A&&... _args)
+        {
+            if (alive.lock())
+                handler(std::forward<A>(_args)...);
+        }
+    };
+
+    // The handlers run on the io_service thread
     template <class H>
     auto guard(H _h)
     {
-        std::weak_ptr<bool> alive = m_alive;
-        // Only invocable as _h is: Asio picks overloads by what a handler accepts
-        return boost::asio::bind_executor(m_strand,
-            [alive, _h](auto&&... _args) mutable
-            -> std::enable_if_t<std::is_invocable_v<H&, decltype(_args)...>> {
-                if (alive.lock())
-                    _h(std::forward<decltype(_args)>(_args)...);
-            });
+        return boost::asio::bind_executor(m_strand, Guarded<H>{m_alive, std::move(_h)});
     }
 
     void connected();
