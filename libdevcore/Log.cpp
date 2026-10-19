@@ -357,9 +357,9 @@ void dev::setLogFile(const std::string& _path, size_t _maxBytes, unsigned _keep)
 LogOutputStreamBase::LogOutputStreamBase(char const* _source, LogLevel _level)
   : m_source(_source), m_level(_level), m_enabled(_level <= g_logLevel)
 {
-    static std::locale logLocl = std::locale("");
+    // The classic locale: no thousands separators in ports, heights and counts
     if (m_enabled)
-        m_sstr.imbue(logLocl);
+        m_sstr.imbue(std::locale::classic());
 }
 
 void LogOutputStreamBase::flush()
