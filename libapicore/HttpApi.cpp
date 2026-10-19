@@ -318,7 +318,7 @@ h1{font-size:18px;margin:0}
 h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:20px 0 8px}
 .muted{color:var(--muted)}
 main{max-width:1200px;margin:0 auto;padding:16px}
-.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px;align-items:start}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
 a{color:var(--accent)}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
 .tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
@@ -383,6 +383,7 @@ const history = [], rigsHistory = [], expanded = new Set();
 let token = sessionStorage.getItem("hashwarp-token") || "";
 function headers(){ return token ? {"Authorization":"Bearer " + token} : {}; }
 function fmt(h){ const u=[["TH/s",1e12],["GH/s",1e9],["MH/s",1e6],["kH/s",1e3]]; for (const [n,d] of u) if (h >= d*0.9995) return (h/d).toFixed(2)+" "+n; return h.toFixed(0)+" H/s"; }
+function num(n){ return Number(n).toLocaleString("en-US"); }
 function temp(c){ return c > 0 ? c + "°C" : "–"; }
 function ago(s){ return s < 90 ? s + " s" : s < 5400 ? Math.round(s/60) + " min" : Math.round(s/3600) + " h"; }
 function uptime(s){ const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d ? d+"d " : "") + h + ":" + String(m).padStart(2,"0"); }
@@ -425,7 +426,7 @@ function renderRigs(rigs){
     if (s){
       online++; const w = power(s); hr += s.hashrate.now; hr15 += s.hashrate["15m"]; watts += w; acc += s.shares.accepted; rej += s.shares.rejected; gpus += s.gpus.length;
       const hot = Math.max(0, ...s.gpus.map(g => g.temperature.core));
-      tr.append(td(fmt(s.hashrate.now)), td(fmt(s.hashrate["15m"])), td(s.shares.accepted + (s.shares.rejected ? "/" + s.shares.rejected : "")),
+      tr.append(td(fmt(s.hashrate.now)), td(fmt(s.hashrate["15m"])), td(num(s.shares.accepted) + (s.shares.rejected ? "/" + num(s.shares.rejected) : "")),
         td(s.gpus.length + (s.gpus.some(g => g.paused) ? " (" + s.gpus.filter(g => g.paused).length + " paused)" : "")),
         td(temp(hot), hot >= HOT ? "alert" : ""), td(w > 0 ? w.toFixed(0) + " W" : "–"), td(w > 0 ? (s.hashrate.now/1e3/w).toFixed(0) : "–"),
         td(s.pool.host, "left"), td(uptime(s.miner.uptime)));
@@ -437,7 +438,7 @@ function renderRigs(rigs){
       sub.append(td(gpuName(g)), td(g.name, "left"));
       if (g.paused){ const c=td("paused" + (g.pause_reason ? " (" + g.pause_reason + ")" : ""), "paused"); c.colSpan=2; sub.append(c); }
       else sub.append(td(fmt(g.hashrate.now)), td(fmt(g.hashrate["15m"])));
-      sub.append(td(g.shares.accepted + (g.shares.rejected ? "/" + g.shares.rejected : "")), td(g.temperature.core > 0 ? g.fan + "% fan" : "–"),
+      sub.append(td(num(g.shares.accepted) + (g.shares.rejected ? "/" + num(g.shares.rejected) : "")), td(g.temperature.core > 0 ? g.fan + "% fan" : "–"),
         td(temp(g.temperature.core), g.temperature.core >= HOT ? "alert" : ""), td(g.power > 0 ? g.power.toFixed(0) + " W" : "–"),
         td(g.power > 0 ? (g.hashrate.now/1e3/g.power).toFixed(0) : "–"), td(""), td(""));
       body.append(sub);
@@ -445,7 +446,7 @@ function renderRigs(rigs){
   }
   if (rigs.length > 1){
     const tr = document.createElement("tr"); tr.className = "total";
-    tr.append(td("Total"), td(online + "/" + rigs.length + " online", "left"), td(fmt(hr)), td(fmt(hr15)), td(acc + (rej ? "/" + rej : "")), td(String(gpus)),
+    tr.append(td("Total"), td(online + "/" + rigs.length + " online", "left"), td(fmt(hr)), td(fmt(hr15)), td(num(acc) + (rej ? "/" + num(rej) : "")), td(String(gpus)),
       td(""), td(watts > 0 ? watts.toFixed(0) + " W" : "–"), td(watts > 0 ? (hr/1e3/watts).toFixed(0) : "–"), td(""), td(""));
     body.append(tr);
   }
@@ -453,7 +454,7 @@ function renderRigs(rigs){
   document.getElementById("rigsOnline").className = "v" + (online < rigs.length ? " down" : "");
   document.getElementById("rigsHr").textContent = fmt(hr);
   document.getElementById("rigsPower").textContent = watts > 0 ? watts.toFixed(0) + " W" : "–";
-  document.getElementById("rigsShares").textContent = acc + (rej ? " / " + rej + " rej" : "");
+  document.getElementById("rigsShares").textContent = num(acc) + (rej ? " / " + num(rej) + " rej" : "");
   spark("rigsSpark", rigsHistory, hr);
 }
 
@@ -465,7 +466,7 @@ function renderLocal(s){
   document.getElementById("hr").textContent = fmt(s.hashrate.now);
   document.getElementById("hr15").textContent = fmt(s.hashrate["15m"]);
   document.getElementById("eff").textContent = s.hashrate.effective > 0 ? fmt(s.hashrate.effective) : "–";
-  document.getElementById("shares").textContent = s.shares.accepted + (s.shares.rejected ? " / " + s.shares.rejected + " rej" : "");
+  document.getElementById("shares").textContent = num(s.shares.accepted) + (s.shares.rejected ? " / " + num(s.shares.rejected) + " rej" : "");
   spark("spark", history, s.hashrate.now);
   const actions = document.getElementById("actions"); actions.innerHTML = "";
   if (s.control){ const b=document.createElement("button"); b.textContent="Restart"; b.onclick=()=>control("restart"); actions.append(b); }
@@ -475,7 +476,7 @@ function renderLocal(s){
     tr.append(td(gpuName(g)), td(g.name));
     if (g.paused){ const c=td("paused" + (g.pause_reason ? " (" + g.pause_reason + ")" : ""), "paused"); c.colSpan=2; tr.append(c); }
     else tr.append(td(fmt(g.hashrate.now)), td(fmt(g.hashrate["15m"])));
-    tr.append(td(g.shares.accepted + (g.shares.rejected ? "/" + g.shares.rejected : "")), td(temp(g.temperature.core)), td(temp(g.temperature.memory || g.temperature.hotspot)),
+    tr.append(td(num(g.shares.accepted) + (g.shares.rejected ? "/" + num(g.shares.rejected) : "")), td(temp(g.temperature.core)), td(temp(g.temperature.memory || g.temperature.hotspot)),
       td(g.temperature.core > 0 ? g.fan + "%" : "–"), td(g.power > 0 ? g.power.toFixed(0) + " W" : "–"), td(g.power > 0 ? (g.hashrate.now/1e3/g.power).toFixed(0) : "–"));
     const act = document.createElement("td");
     if (s.control){ const b=document.createElement("button"); b.textContent = g.paused ? "Resume" : "Pause"; b.onclick=()=>control(g.paused ? "resume" : "pause", g.index); act.append(b); }
