@@ -55,7 +55,7 @@ Run `hashwarp` without arguments: it asks whether you mine on a pool or solo, sa
 Or give the options on the command line:
 
 ```sh
-# On a pool (Parallax pools: see docs/MINING.md or https://miningpoolstats.stream/parallax)
+# On a pool (Parallax pools: https://miningpoolstats.stream/parallax)
 hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker rig1
 
 # TLS, and a failover pool
@@ -67,7 +67,8 @@ hashwarp --solo
 ```
 
 `hashwarp --list-devices` lists the GPUs, `hashwarp --selftest` checks them, `hashwarp --help` shows
-every option. See [docs/MINING.md](docs/MINING.md) for pools, solo mining, GPU selection and tuning.
+every option. The [documentation](https://docs.parallaxprotocol.org/hashwarp/getting-started) covers
+pools, solo mining, configuration, GPUs, overclocking, the output and every option.
 
 While mining, press `h` for the keys: `s` statistics, `p`/`r` pause/resume all GPUs, `0`-`9`
 pause/resume one GPU, `c` connection details, `l` debug output, `q` quit.
@@ -102,7 +103,9 @@ the order of `--gpu-id` (or of `--list-devices`); a single value applies to all 
 `/api/v1/summary` and Prometheus metrics on `/metrics`. Add `--api-token` to require a token and
 `--api-allow-control` to allow pausing, resuming and restarting from the API. With
 `--rig rig2=10.0.0.12 --rig rig3=10.0.0.13` the dashboard shows those rigs too, and `--monitor`
-serves that view without mining. See [docs/API.md](docs/API.md).
+serves that view without mining. See the
+[dashboard](https://docs.parallaxprotocol.org/hashwarp/dashboard) and
+[API](https://docs.parallaxprotocol.org/hashwarp/api) documentation.
 
 ## Safety
 
