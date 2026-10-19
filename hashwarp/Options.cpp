@@ -370,6 +370,8 @@ void registerOptions(CLI::App& _app, Options& _o)
         ->group(c_groupTuning);
     _app.add_flag("--cl-noexit", _o.clNoExit, "OpenCL: don't use the fast exit kernel (all GPUs)")
         ->group(c_groupTuning);
+    // 1.x: turned off the binary kernels, which are gone. Accepted so old command lines start
+    _app.add_flag("--cl-nobin", "")->group("");
     _app.add_option("-L,--dag-load-mode", _o.dagLoadMode,
             "0 = build DAGs on all GPUs at once, 1 = one GPU after the other")
         ->check(CLI::Range(0, 1))

@@ -155,7 +155,8 @@ TEST(options, per_gpu_lists)
 
 TEST(options, legacy_names)
 {
-    auto o = parse({"-U", "--tstop", "85", "--farm-recheck", "500", "--cu-devices", "0,1", "-v", "1"});
+    auto o = parse({"-U", "--tstop", "85", "--farm-recheck", "500", "--cu-devices", "0,1", "-v", "1",
+        "--cl-nobin"});
     EXPECT_EQ(o.backend, "cuda");
     EXPECT_EQ(perGpu(o.tempStop, 0), 85u);
     EXPECT_EQ(o.getworkInterval, 500u);
