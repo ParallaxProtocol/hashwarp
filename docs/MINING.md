@@ -331,9 +331,9 @@ relies on.
 
 | Problem | What to do |
 | ------- | ---------- |
-| `No usable mining devices found` on Windows | The OpenCL runtime isn't registered, see [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/v2.1.x/guides/mining/troubleshooting) |
-| `GPU n gave incorrect result` | Lower the memory overclock of that GPU, then check with `hashwarp --selftest` |
+| `No usable mining devices found` on Windows | NVIDIA: install or update the driver (525 or newer), hashwarp mines with CUDA. AMD: reinstall the Adrenalin driver; if it still isn't found, its OpenCL runtime isn't registered, see [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/v2.1.x/guides/mining/troubleshooting) |
+| `Wrong result, lower the overclock if it happens often` | Lower the memory overclock of that GPU, then check with `hashwarp --selftest` |
 | Rejected shares with a `low difficulty` reason | Make sure the pool's stratum flavour is detected (`--esm`), and report it with `--log-debug json` output |
-| `Epoch N requires ... memory` | The GPU doesn't have enough free memory for the DAG |
+| `Epoch N needs ...` and the GPU paused | The GPU doesn't have enough free memory for the DAG |
 | Hashrate drops to 0 and `paused` | A temperature limit was reached (see the warning above it) |
 | `Rusticl warning` or `pci id for fd` lines at start (Linux) | Printed by Mesa's OpenCL driver, harmless. Mine with `--cuda` on NVIDIA only rigs, or set `OCL_ICD_VENDORS` to the vendor's `.icd` file (e.g. `nvidia.icd`) |

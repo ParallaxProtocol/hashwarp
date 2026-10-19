@@ -167,8 +167,6 @@ install(FILES README.md LICENSE packaging/release/hashwarp.json.example
   DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
 if(WIN32)
   install(FILES packaging/release/start.bat packaging/release/start-solo.bat
-    scripts/fix-opencl-icd.vbs DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
-  install(FILES scripts/README.txt RENAME fix-opencl-icd.txt
     DESTINATION . COMPONENT release EXCLUDE_FROM_ALL)
   # The Visual C++ runtime DLLs next to the executable, so it also runs where
   # the redistributable is not installed
