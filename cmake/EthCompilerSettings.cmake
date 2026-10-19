@@ -41,8 +41,9 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
   # ------------------------------ MSVC -----------------------------------------
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-  # Windows Vista+ requirement; avoid min/max macro conflicts; silence CRT warnings
-  add_definitions(/D_WIN32_WINNT=0x0600 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS)
+  # Windows Vista+ requirement; avoid min/max macro conflicts; silence CRT warnings;
+  # windows.h without winsock.h, which Boost.Asio can't follow
+  add_definitions(/D_WIN32_WINNT=0x0600 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS /DWIN32_LEAN_AND_MEAN)
 
   # IMPORTANT: Use language-specific vars so CUDA (CMAKE_CUDA_FLAGS) stays untouched.
   # C flags (no C++-only warnings here)
