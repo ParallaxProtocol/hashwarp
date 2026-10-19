@@ -20,6 +20,8 @@ or solo on your own node.
 * **Overclocking**: memory and core clocks, power limits and fans per GPU (NVIDIA, and AMD on
   Linux), profiles, and `--oc-tune`, which finds the best memory clock and the most efficient core
   clock of each GPU
+* **Good for the network**: warns when your pool finds most of Parallax's blocks, which lets it
+  reverse payments, and points to smaller pools
 * **Monitoring**: a web dashboard of one rig or all of them, a JSON API and Prometheus metrics
 * **Rig operating systems**: HiveOS and mmpOS packages, a Docker image
 

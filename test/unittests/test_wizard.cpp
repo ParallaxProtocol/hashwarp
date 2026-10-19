@@ -2,6 +2,7 @@
 
 #include <hashwarp/Options.h>
 #include <hashwarp/Wizard.h>
+#include <libpoolprotocols/PoolCheck.h>
 
 #include <CLI/CLI.hpp>
 #include <gtest/gtest.h>
@@ -64,6 +65,28 @@ TEST_F(WizardTest, known_pool)
     EXPECT_FALSE(o.worker.empty());
     ASSERT_EQ(buildPoolUris(o).size(), 1u);
     EXPECT_EQ(buildPoolUris(o)[0].compare(0, 12, "stratumss://"), 0);
+}
+
+TEST_F(WizardTest, majority_pool_listed_last)
+{
+    dev::eth::NetworkShares shares = dev::eth::parseNetworkShares(
+        "{\"decentralization\":{\"blocks\":100,\"topMiners\":["
+        "{\"name\":\"rplant.xyz\",\"share\":0.86},{\"name\":\"coolpool.top\",\"share\":0.14}]}}");
+    std::istringstream in(
+        "\n"                                            // pool (default)
+        "\n"                                            // first listed pool (default)
+        "0x1234567890abcdef1234567890abcdef12345678\n"
+        "\n"                                            // default worker name
+        "\n"                                            // save
+        "n\n");                                         // don't start now
+    std::ostringstream out;
+    EXPECT_FALSE(runWizard(path, in, out, &shares));
+    EXPECT_NE(out.str().find("1) coolpool.top, PPLNS 1% · 14% of the blocks"), std::string::npos)
+        << out.str();
+    EXPECT_NE(out.str().find("rplant.xyz, Russia, PPLNS 1% · 86% of the blocks, majority"),
+        std::string::npos);
+    EXPECT_NE(out.str().find("please choose another one"), std::string::npos);
+    EXPECT_EQ(load().pools[0], "prlx.coolpool.top:3003");
 }
 
 TEST_F(WizardTest, other_pool)

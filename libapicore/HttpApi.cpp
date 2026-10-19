@@ -344,6 +344,7 @@ td.left{text-align:left}
 button{font:inherit;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:6px;padding:3px 10px;cursor:pointer}
 button:hover{border-color:var(--accent)}
 #error{color:var(--bad);margin:0 0 12px}
+.banner{background:var(--card);border:1px solid var(--warn);border-left-width:4px;border-radius:8px;padding:10px 12px;margin:0 0 12px}
 footer{padding:16px;text-align:center;color:var(--muted);font-size:12px}
 </style>
 </head>
@@ -351,6 +352,7 @@ footer{padding:16px;text-align:center;color:var(--muted);font-size:12px}
 <header><h1>Hashwarp</h1><span id="version" class="muted"></span><span id="pool"></span><span id="uptime" class="muted"></span><span id="actions"></span></header>
 <main>
 <p id="error" hidden></p>
+<div id="warnings"></div>
 <section id="rigs" hidden>
 <section class="tiles">
 <div class="tile"><div class="l">Rigs online</div><div class="v" id="rigsOnline">-</div></div>
@@ -401,6 +403,7 @@ function alerts(r){
   if (!r.online) return [(r.error || "offline") + (r.age >= 0 ? " · seen " + ago(r.age) + " ago" : "")];
   const s = r.summary, a = [];
   if (!s.pool.connected) a.push("not connected");
+  if (s.pool.warning) a.push("majority pool");
   const paused = s.gpus.filter(g => g.paused).length; if (paused) a.push(paused + " paused");
   const hot = Math.max(0, ...s.gpus.map(g => g.temperature.core)); if (hot >= HOT) a.push("hot " + hot + "°C");
   if (s.shares.rejected + s.shares.failed > Math.max(2, s.shares.accepted * 0.05)) a.push("rejected shares");
@@ -490,6 +493,15 @@ async function refresh(){
     document.getElementById("rigs").hidden = !multi;
     document.getElementById("local").hidden = !data.mining;
     document.getElementById("localTitle").hidden = !multi;
+    // The pools' majority warnings, once per text
+    const warnings = document.getElementById("warnings"); warnings.innerHTML = "";
+    const seen = new Set();
+    for (const rig of data.rigs){
+      const w = rig.online && rig.summary.pool.warning; if (!w || seen.has(w)) continue; seen.add(w);
+      const p = document.createElement("p"); p.className = "banner"; p.textContent = "⚠ " + w + ". Please mine on a smaller pool: ";
+      const a = document.createElement("a"); a.href = "https://status.parallaxprotocol.org"; a.textContent = "status.parallaxprotocol.org"; a.target = "_blank"; a.rel = "noopener";
+      p.append(a); warnings.append(p);
+    }
     if (multi) renderRigs(data.rigs);
     if (data.mining) renderLocal(data.rigs[0].summary);
     else document.getElementById("version").textContent = "monitor";

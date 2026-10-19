@@ -32,6 +32,23 @@ for the rig:
 hashwarp --pool pool.example.com:3333 --wallet 0xYourParallaxAddress --worker rig1
 ```
 
+### Pools with the majority
+
+A pool that finds more than half of the blocks can reverse payments and block transactions, which
+puts the coin you mine at risk. Hashwarp reads the pools' shares of the last 7 days' blocks from
+[status.parallaxprotocol.org](https://status.parallaxprotocol.org) every 10 minutes. When yours
+has the majority it says so at startup and then every hour, with the smaller pools:
+
+```
+05:26:47  WARN  pool   rplant.xyz found 86% of the network's blocks in the last 7 days. A pool with the majority can reverse payments and block transactions, which puts the coin you mine at risk
+05:26:47  WARN  pool   Please mine on a smaller pool (coolpool.top 13% · gtpool.io 1%) or solo (--solo). https://status.parallaxprotocol.org has the figures; --no-pool-check hides this
+```
+
+The dashboard shows it too, and the first run wizard lists such a pool last. Hashwarp never changes
+pools by itself. The request sends nothing about you or your rig (only hashwarp's version, as the
+User-Agent); if it fails, hashwarp carries on mining without a word. `--no-pool-check` turns it off.
+It doesn't run when solo mining, in simulation, `--selftest` or `--oc-tune`.
+
 | Option | Meaning |
 | ------ | ------- |
 | `-o, --pool` | `host:port`, or a URL (see below). Repeat it or separate pools with commas: the next pool is used when one fails |

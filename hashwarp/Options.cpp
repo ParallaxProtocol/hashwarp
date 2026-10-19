@@ -288,6 +288,10 @@ void registerOptions(CLI::App& _app, Options& _o)
             "Seconds before reconnecting, doubles on each failed attempt (up to 120)")
         ->check(CLI::Range(1, 999))
         ->group(c_groupPool);
+    _app.add_flag("--no-pool-check", _o.noPoolCheck,
+            "Don't warn when the pool finds most of the network's blocks (hashwarp reads the "
+            "pools' shares from status.parallaxprotocol.org every 10 minutes)")
+        ->group(c_groupPool);
     _app.add_option("--failover-timeout", _o.failoverTimeout,
             "Minutes on a failover pool before trying the first one again (0 = never)")
         ->check(CLI::Range(0, 999))

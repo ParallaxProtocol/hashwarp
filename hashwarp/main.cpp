@@ -36,7 +36,9 @@
 #if ETH_XHASHCPU
 #include <libxhash-cpu/CPUMiner.h>
 #endif
+#include <libpoolprotocols/PoolCheck.h>
 #include <libpoolprotocols/PoolManager.h>
+#include <libpoolprotocols/Tls.h>
 
 #if API_CORE
 #include <libapicore/ApiServer.h>
@@ -867,6 +869,15 @@ private:
         // Start PoolManager
         PoolManager::p().start();
 
+        // Warns when the pool has the majority of the blocks (not offline nor solo)
+        std::unique_ptr<PoolCheck> poolCheck;
+        if (m_mode == OperationMode::Mining && !m_opts.noPoolCheck && m_opts.solo.empty() &&
+            m_opts.ocTune.empty() && !m_opts.selftestSeconds)
+        {
+            poolCheck.reset(new PoolCheck());
+            poolCheck->start();
+        }
+
         // Initialize display timer as sleeper with proper interval
         m_cliDisplayTimer.expires_from_now(boost::posix_time::seconds(m_cliDisplayInterval));
         m_cliDisplayTimer.async_wait(m_io_strand.wrap(boost::bind(
@@ -922,6 +933,7 @@ private:
             rigs->stop();
 
 #endif
+        poolCheck.reset();
         if (PoolManager::p().isRunning())
             PoolManager::p().stop();
 
@@ -1351,7 +1363,18 @@ int main(int argc, char** argv)
             config = hashwarp::defaultConfigPath();
             try
             {
-                if (!hashwarp::runWizard(config, std::cin, cout))
+                // The pools' shares of the blocks, to list a majority pool last
+                std::unique_ptr<NetworkShares> shares;
+                try
+                {
+                    shares.reset(new NetworkShares(parseNetworkShares(
+                        httpsGet(c_statusHost, c_statusPath, std::chrono::seconds(5)))));
+                }
+                catch (const std::exception&)
+                {
+                    // Listed as they are
+                }
+                if (!hashwarp::runWizard(config, std::cin, cout, shares.get()))
                     return 0;
             }
             catch (const std::exception& ex)

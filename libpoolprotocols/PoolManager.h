@@ -1,6 +1,7 @@
 #pragma once
 
 #include <iostream>
+#include <mutex>
 
 #include <json/json.h>
 
@@ -58,6 +59,18 @@ public:
     unsigned getConnectionSwitches();
     unsigned getEpochChanges();
 
+    /// A warning about the active pool from the status page (it finds most blocks), "" if none
+    std::string getPoolWarning()
+    {
+        std::lock_guard<std::mutex> l(x_poolWarning);
+        return m_poolWarning;
+    }
+    void setPoolWarning(const std::string& _warning)
+    {
+        std::lock_guard<std::mutex> l(x_poolWarning);
+        m_poolWarning = _warning;
+    }
+
 private:
     void rotateConnect();
 
@@ -94,6 +107,9 @@ private:
     std::unique_ptr<PoolClient> p_client = nullptr;
 
     std::atomic<unsigned> m_epochChanges = {0};
+
+    std::mutex x_poolWarning;
+    std::string m_poolWarning;
 
     static PoolManager* m_this;
 };

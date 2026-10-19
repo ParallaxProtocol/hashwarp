@@ -2,6 +2,8 @@
 // Licensed under GNU General Public License, Version 3. See the LICENSE file.
 
 #include "Wizard.h"
+
+#include <libpoolprotocols/PoolCheck.h>
 #include "Options.h"
 
 #include <json/json.h>
@@ -12,6 +14,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 #if defined(_WIN32)
 #include <io.h>
@@ -103,6 +106,12 @@ std::string defaultWorker()
             ret += c;
     return ret.empty() ? "rig" : ret.substr(0, 32);
 }
+std::string sharePercent(double _share)
+{
+    if (_share > 0 && _share < 0.01)
+        return "<1%";
+    return std::to_string((int)(_share * 100 + 0.5)) + "%";
+}
 }  // namespace
 
 bool isInteractive()
@@ -114,7 +123,8 @@ bool isInteractive()
 #endif
 }
 
-bool runWizard(const std::string& _path, std::istream& _in, std::ostream& _out)
+bool runWizard(const std::string& _path, std::istream& _in, std::ostream& _out,
+    const dev::eth::NetworkShares* _shares)
 {
     Json::Value config(Json::objectValue);
     try
@@ -130,9 +140,37 @@ bool runWizard(const std::string& _path, std::istream& _in, std::ostream& _out)
 
         if (mode == "1")
         {
-            _out << "\nWhich pool?\n";
+            // A pool with the majority of the blocks last, with the shares when known
+            std::vector<unsigned> order, majority;
+            std::vector<std::string> labels(c_knownPoolCount);
+            const dev::eth::PoolShare* largest = nullptr;
             for (unsigned i = 0; i < c_knownPoolCount; i++)
-                _out << "  " << i + 1 << ") " << c_knownPools[i].name << "\n";
+            {
+                std::string host = c_knownPools[i].host;
+                const dev::eth::PoolShare* p =
+                    _shares ? dev::eth::findPool(*_shares, host.substr(0, host.rfind(':'))) :
+                              nullptr;
+                labels[i] = c_knownPools[i].name;
+                if (p)
+                    labels[i] += " · " + sharePercent(p->share) + " of the blocks";
+                if (p && p->share > 0.5)
+                {
+                    labels[i] += ", majority";
+                    majority.push_back(i);
+                    largest = p;
+                }
+                else
+                    order.push_back(i);
+            }
+            order.insert(order.end(), majority.begin(), majority.end());
+
+            _out << "\nWhich pool?\n";
+            if (largest)
+                _out << "(" << largest->name << " finds " << sharePercent(largest->share)
+                     << " of the blocks. A pool with the majority can reverse payments and "
+                        "block transactions: please choose another one)\n";
+            for (unsigned i = 0; i < c_knownPoolCount; i++)
+                _out << "  " << i + 1 << ") " << labels[order[i]] << "\n";
             _out << "  " << c_knownPoolCount + 1 << ") Another pool (Parallax pools are listed at "
                  << c_poolsGuide << ")\n";
             unsigned choice = 0;
@@ -151,7 +189,7 @@ bool runWizard(const std::string& _path, std::istream& _in, std::ostream& _out)
             config["pool"] = Json::Value(Json::arrayValue);
             if (choice <= c_knownPoolCount)
             {
-                const KnownPool& known = c_knownPools[choice - 1];
+                const KnownPool& known = c_knownPools[order[choice - 1]];
                 config["pool"].append(known.host);
                 if (known.tls)
                     config["tls"] = true;

@@ -100,7 +100,8 @@ curl -s -H "Authorization: Bearer secret" http://127.0.0.1:21550/api/v1/summary
         "difficulty": 4294967296.0,
         "epoch": 83,
         "block": -1,
-        "switches": 1
+        "switches": 1,
+        "warning": ""
     },
     "hashrate": { "now": 115480000.0, "60s": 115400000.0, "15m": 115210000.0, "effective": 112300000.0 },
     "shares": { "accepted": 42, "rejected": 1, "failed": 0 },
@@ -128,6 +129,8 @@ curl -s -H "Authorization: Bearer secret" http://127.0.0.1:21550/api/v1/summary
   minutes are worth, 0 during the first 2 minutes
 * `difficulty` is the expected number of hashes per share
 * `block` is the height being mined, -1 when the pool doesn't send it
+* `warning` is set when the pool finds most of the network's blocks (see
+  [MINING.md](MINING.md#pools-with-the-majority)), empty otherwise
 * `failed` counts solutions the CPU found incorrect (not submitted)
 * sensors are 0 when the GPU doesn't report them; `pause_reason` is empty while mining
 * the pool password is never shown

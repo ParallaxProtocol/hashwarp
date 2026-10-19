@@ -2,6 +2,8 @@ set(SOURCES
  PoolURI.cpp PoolURI.h
  PoolClient.h
  PoolManager.h PoolManager.cpp
+ PoolCheck.h PoolCheck.cpp
+ Tls.h Tls.cpp
  testing/SimulateClient.h testing/SimulateClient.cpp
  stratum/EthStratumClient.h stratum/EthStratumClient.cpp
  getwork/EthGetworkClient.h getwork/EthGetworkClient.cpp

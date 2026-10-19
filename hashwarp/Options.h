@@ -36,6 +36,7 @@ struct Options
     unsigned failoverTimeout = 0;      // min
     unsigned workTimeout = 7200;       // s
     unsigned responseTimeout = 2;      // s
+    bool noPoolCheck = false;          // don't check the pool's share of the blocks
 
     // Devices
     bool listDevices = false;

@@ -1260,6 +1260,7 @@ Json::Value ApiConnection::getSummary()
     pool["epoch"] = PoolManager::p().getCurrentEpoch();
     pool["block"] = PoolManager::p().getCurrentBlock();
     pool["switches"] = PoolManager::p().getConnectionSwitches();
+    pool["warning"] = PoolManager::p().getPoolWarning();
 
     s["hashrate"]["now"] = t.farm.hashrate;
     s["hashrate"]["60s"] = t.farm.hashrate60;
