@@ -187,5 +187,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist && sha256sum hashwarp-* | grep -v '\.sha256' > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --draft --title "hashwarp $GITHUB_REF_NAME" \
-            --generate-notes -R "$GITHUB_REPOSITORY" hashwarp-* SHA256SUMS
+          # The notes are the version's section of CHANGELOG.md, or generated without one
+          awk -v v="## $GITHUB_REF_NAME" '$0 == v { on = 1; next } on && /^## / { exit } on' \
+            ../CHANGELOG.md > notes.md
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" --draft --title "Hashwarp $GITHUB_REF_NAME" \
+            "${notes[@]}" -R "$GITHUB_REPOSITORY" hashwarp-* SHA256SUMS
