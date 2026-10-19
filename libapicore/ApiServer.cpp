@@ -1222,7 +1222,16 @@ Json::Value ApiConnection::getRigs()
     {
         // This rig first
         Json::Value self;
-        self["name"] = boost::asio::ip::host_name();
+        // The worker name the pool knows the rig by, or the computer's
+        std::string name;
+        if (auto conn = PoolManager::p().getActiveConnection())
+        {
+            std::string user = conn->UserDotWorker();
+            name = conn->Workername().empty() ?
+                       (user.find('.') == std::string::npos ? "" : user.substr(user.find('.') + 1)) :
+                       conn->Workername();
+        }
+        self["name"] = name.empty() ? boost::asio::ip::host_name() : name;
         self["host"] = "";
         self["local"] = true;
         self["online"] = true;
