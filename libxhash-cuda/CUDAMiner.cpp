@@ -373,16 +373,16 @@ int CUDAMiner::getNumDevices()
     {
         int driverVersion = 0;
         cudaDriverGetVersion(&driverVersion);
+        // No NVIDIA driver: an AMD or Intel rig, nothing to say
         if (driverVersion == 0)
-            std::cerr << "CUDA Error : No CUDA driver found" << std::endl;
+            cdebug << "No NVIDIA driver: no CUDA GPUs";
         else
-            std::cerr << "CUDA Error : Insufficient CUDA driver " << std::to_string(driverVersion)
-                      << std::endl;
+            cwarn << "The NVIDIA driver supports CUDA " << driverVersion / 1000 << "."
+                  << driverVersion % 1000 / 10
+                  << " only: update it to version 525 or newer to mine with CUDA";
     }
-    else
-    {
-        std::cerr << "CUDA Error : " << cudaGetErrorString(err) << std::endl;
-    }
+    else if (err != cudaErrorNoDevice)
+        cwarn << "CUDA: " << cudaGetErrorString(err);
 
     return 0;
 }
