@@ -350,7 +350,14 @@ public:
         }
         catch (const CLI::ParseError& e)
         {
-            throw std::invalid_argument(e.what());
+            // CLI11 calls every configuration file INI
+            std::string what = e.what();
+            const std::string unknownKey = "INI was not able to parse ";
+            if (what.compare(0, unknownKey.size(), unknownKey) == 0)
+                what = "Unknown key \"" + what.substr(unknownKey.size()) +
+                       "\" in the configuration file. Keys are the option names without dashes "
+                       "(hashwarp --help)";
+            throw std::invalid_argument(what);
         }
         m_opts.soloRequested = app.count("--solo") > 0;
         if (app.count("--selftest") && !m_opts.selftestSeconds)

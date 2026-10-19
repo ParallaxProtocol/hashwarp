@@ -253,8 +253,8 @@ void registerOptions(CLI::App& _app, Options& _o)
 
     // Pool
     _app.add_option("-o,--pool,-P", _o.pools,
-            "Pool as host:port or URL (stratum+tcp://, stratum+ssl://, http:// for "
-            "getwork). Repeat or comma separate for failover pools")
+            "Pool as host:port or URL (stratum+tcp://, stratum+ssl://; http:// or ws:// for "
+            "a node, as --solo). Repeat or comma separate for failover pools")
         ->delimiter(',')
         ->group(c_groupPool);
     _app.add_option("-u,--wallet", _o.wallet, "Your Parallax address (0x...)")
