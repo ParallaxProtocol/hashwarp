@@ -4,6 +4,7 @@
 * [Solo mining](#solo-mining)
 * [GPUs](#gpus)
 * [Tuning](#tuning)
+* [Overclocking](#overclocking)
 * [Temperatures and the watchdog](#temperatures-and-the-watchdog)
 * [Logs and output](#logs-and-output)
 * [HiveOS and mmpOS](#hiveos-and-mmpos)
@@ -119,6 +120,78 @@ These options take one value per GPU (in `--gpu-id` order) or a single value for
 
 `--cuda-schedule` (`sync` by default) sets how the CPU waits for CUDA: `spin` lowers latency a bit at
 the cost of a CPU core per GPU.
+
+## Overclocking
+
+XHash is limited by the memory: a higher memory clock raises the hashrate, while the core clock can
+usually go well below its default without costing anything, which saves power. Hashwarp sets both
+itself, on NVIDIA GPUs (Linux and Windows) and AMD GPUs (Linux), and puts the GPU back to its
+previous settings when it exits.
+
+Changing them needs root on Linux (`sudo hashwarp ...`) or administrator rights on Windows. Rig
+operating systems that overclock themselves (HiveOS, mmpOS) don't need these options.
+
+### Finding the settings: --oc-tune
+
+```sh
+sudo hashwarp --oc-tune         # memory and core clocks, 10 to 20 minutes
+sudo hashwarp --oc-tune=core    # only the core clock, which is safe, about 5 minutes
+```
+
+The tuner mines offline at an easy difficulty and checks every result on the CPU. It raises the
+memory clock step by step while the results stay correct and the hashrate grows (GDDR6X memory
+corrects its own errors, which shows as a hashrate that falls again), keeps the best value or the
+one below it, then lowers the core clock as far as the hashrate stays within 1%. The results go to
+`hashwarp-oc.json` next to the configuration file (`--oc-tune-file`), per GPU, and are used with:
+
+```sh
+sudo hashwarp --oc-profile tuned --pool ... --wallet ...
+```
+
+Tune with the GPUs otherwise idle: a desktop, video or game on the same GPU makes the hashrate
+unsteady, which the tuner notices and measures longer for, but its results are then less precise.
+`--oc-tune=core` keeps a memory clock tuned before. A memory clock that is too high can hang a GPU:
+the watchdog then exits hashwarp (exit code 5), which restores the settings.
+
+### Profiles
+
+`--oc-profile` takes one profile per GPU, or one for all:
+
+| Profile | Settings |
+| ------- | -------- |
+| `tuned` | The `--oc-tune` results of the GPU |
+| `efficient` | The tuned core clock, never the memory. On GPUs that weren't tuned, 80% of the default power limit |
+| `stock` | Default clocks, power limit and fan control |
+
+Your own profiles go into the configuration file, and can be selected per GPU:
+
+```json
+{
+    "oc-profile": ["fast", "fast", "quiet"],
+    "oc-profiles": {
+        "fast": {"core-clock": 1650, "mem-offset": 2500, "power": 320},
+        "quiet": {"core-clock": 1400, "power": "70%", "fan": 60}
+    }
+}
+```
+
+### Settings
+
+These take one value per GPU, or one for all; `x` leaves a GPU alone (`--oc-mem-offset 2000,x,1500`).
+They override the profile's values.
+
+| Option | Meaning |
+| ------ | ------- |
+| `--oc-core-clock` | Core clock in MHz: locked on NVIDIA, highest state on AMD. 0 = default |
+| `--oc-core-offset` | Core clock offset in MHz (NVIDIA) |
+| `--oc-mem-offset` | Memory clock offset in MHz (NVIDIA), in the units of nvidia-settings and HiveOS, which are twice MSI Afterburner's: Afterburner's +1000 is +2000 |
+| `--oc-mem-clock` | Memory clock of the highest state in MHz (AMD). 0 = default |
+| `--oc-power` | Power limit in W, or in percent of the default (`75%`) |
+| `--oc-fan` | Fan speed in percent, or `auto` |
+
+AMD GPUs only accept clock changes with overdrive enabled: add `amdgpu.ppfeaturemask=0xffffffff` to
+the kernel command line. If hashwarp is killed (`kill -9`, power loss) it can't restore the
+settings: reboot, or run `sudo hashwarp --oc-reset`.
 
 ## Temperatures and the watchdog
 

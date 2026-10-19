@@ -17,6 +17,9 @@ or solo on your own node.
 * **Safe**: temperature limits per GPU (core, memory or hotspot), a shutdown temperature, a watchdog
   that restarts failed GPUs and exits with a distinct code when a GPU hangs, every share checked on
   the CPU before it is submitted, `--selftest` to check GPUs offline
+* **Overclocking**: memory and core clocks, power limits and fans per GPU (NVIDIA, and AMD on
+  Linux), profiles, and `--oc-tune`, which finds the best memory clock and the most efficient core
+  clock of each GPU
 * **Monitoring**: a web dashboard, a JSON API and Prometheus metrics
 * **Rig operating systems**: HiveOS and mmpOS packages, a Docker image
 
