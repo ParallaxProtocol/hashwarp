@@ -7,6 +7,7 @@ set(SOURCES
  testing/SimulateClient.h testing/SimulateClient.cpp
  stratum/EthStratumClient.h stratum/EthStratumClient.cpp
  getwork/EthGetworkClient.h getwork/EthGetworkClient.cpp
+ getwork/EthWsClient.h getwork/EthWsClient.cpp
 )
 
 # hunter_add_package(OpenSSL) is in the top level CMakeLists.txt

@@ -69,6 +69,8 @@ public:
     UriHostNameType HostNameType() const;
     bool IsLoopBack() const;
     unsigned Version() const;
+    /// ws:// or wss://: a node's WebSocket
+    bool Websocket() const { return Family() == ProtocolFamily::GETWORK && Version() == 1; }
     std::string str() const { return m_uri; }
     std::string strRedacted() const;  // str() with the password masked
 

@@ -270,9 +270,9 @@ void registerOptions(CLI::App& _app, Options& _o)
         ->check(CLI::IsMember({"auto", "0", "1", "2", "3"}))
         ->group(c_groupPool);
     _app.add_option("--solo", _o.solo,
-            "Solo mine with getwork on a Parallax node (default " +
-                std::string(c_defaultSoloUrl) +
-                "). Rewards go to the node's --miner.coinbase")
+            "Solo mine on a Parallax node (default " + std::string(c_defaultSoloUrl) +
+                "; ws://host:8546 to have the node push new work). Rewards go to the "
+                "node's --miner.coinbase")
         ->expected(0, 1)
         ->default_str("")
         ->group(c_groupPool);

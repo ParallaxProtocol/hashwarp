@@ -96,6 +96,21 @@ Each block found is logged as `BLOCK FOUND` with its height. Keep the node's HTT
 network: getwork has no authentication. `--getwork-interval` sets how often (in milliseconds) the
 node is polled for new work.
 
+### New work without polling: WebSocket
+
+Over the node's WebSocket, the node pushes each new block's work to hashwarp the moment it has it
+(`eth_subscribe` to `newWork`), instead of hashwarp asking every second, and blocks go back on the
+same connection:
+
+```sh
+parallaxd --ws --ws.api eth,net,web3,miner --mine --miner.coinbase 0xYourParallaxAddress
+hashwarp --solo ws://127.0.0.1:8546
+```
+
+`wss://` works with a node behind a TLS proxy. A node without the `newWork` subscription is asked
+for work on the same connection every `--getwork-interval` milliseconds; hashwarp says so when it
+connects.
+
 You can combine solo mining with failover pools: `hashwarp --solo --pool pool.example.com:3333
 --wallet 0x...` mines on the pool while the node is unreachable.
 

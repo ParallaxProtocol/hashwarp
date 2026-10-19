@@ -11,6 +11,7 @@
 
 #include "PoolClient.h"
 #include "getwork/EthGetworkClient.h"
+#include "getwork/EthWsClient.h"
 #include "stratum/EthStratumClient.h"
 #include "testing/SimulateClient.h"
 

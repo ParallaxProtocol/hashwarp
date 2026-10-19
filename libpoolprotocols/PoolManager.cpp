@@ -442,7 +442,10 @@ void PoolManager::rotateConnect()
         if (p_client)
             p_client = nullptr;
 
-        if (m_Settings.connections.at(m_activeConnectionIdx)->Family() == ProtocolFamily::GETWORK)
+        if (m_Settings.connections.at(m_activeConnectionIdx)->Websocket())
+            p_client = std::unique_ptr<PoolClient>(
+                new EthWsClient(m_Settings.noWorkTimeout, m_Settings.getWorkPollInterval));
+        else if (m_Settings.connections.at(m_activeConnectionIdx)->Family() == ProtocolFamily::GETWORK)
             p_client =
                 std::unique_ptr<PoolClient>(new EthGetworkClient(m_Settings.noWorkTimeout, m_Settings.getWorkPollInterval));
         if (m_Settings.connections.at(m_activeConnectionIdx)->Family() == ProtocolFamily::STRATUM)

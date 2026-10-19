@@ -55,7 +55,8 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
   # /GL: LTCG (do not let this leak into CUDA)
   # /wdXXXX: silence specific warnings
   # /utf-8: the sources and the log's glyphs are UTF-8
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /EHsc /GL /utf-8 /wd4068 /wd4267 /wd4290")
+  # /bigobj: Boost.Beast's templates exceed the default number of sections
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP /EHsc /GL /utf-8 /bigobj /wd4068 /wd4267 /wd4290")
 
   # Link-time codegen and linker opts
   set(CMAKE_STATIC_LINKER_FLAGS "${CMAKE_STATIC_LINKER_FLAGS} /LTCG")

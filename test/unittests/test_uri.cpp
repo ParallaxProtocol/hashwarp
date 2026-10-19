@@ -29,4 +29,18 @@ TEST(uri, getwork_family)
     EXPECT_EQ(u.Family(), dev::ProtocolFamily::GETWORK);
     EXPECT_EQ(u.Port(), 8545);
     EXPECT_TRUE(u.IsLoopBack());
+    EXPECT_FALSE(u.Websocket());
+}
+
+TEST(uri, websocket)
+{
+    URI ws("ws://127.0.0.1:8546");
+    EXPECT_EQ(ws.Family(), dev::ProtocolFamily::GETWORK);
+    EXPECT_TRUE(ws.Websocket());
+    EXPECT_EQ(ws.SecLevel(), dev::SecureLevel::NONE);
+    EXPECT_EQ(ws.Port(), 8546);
+    URI wss("wss://node.example.com:443");
+    EXPECT_TRUE(wss.Websocket());
+    EXPECT_EQ(wss.SecLevel(), dev::SecureLevel::TLS);
+    EXPECT_FALSE(URI("stratum+tcp://0xabc@pool.example.com:4444").Websocket());
 }
