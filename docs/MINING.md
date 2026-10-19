@@ -331,7 +331,7 @@ relies on.
 
 | Problem | What to do |
 | ------- | ---------- |
-| `No usable mining devices found` on Windows | NVIDIA: install or update the driver (525 or newer), hashwarp mines with CUDA. AMD: reinstall the Adrenalin driver; if it still isn't found, its OpenCL runtime isn't registered, see [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/v2.1.x/guides/mining/troubleshooting) |
+| `No usable mining devices found` on Windows | NVIDIA: install or update the driver (525 or newer), hashwarp mines with CUDA. AMD: reinstall the Adrenalin driver; if it still isn't found, its OpenCL runtime isn't registered, see [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/hashwarp/troubleshooting) |
 | `Wrong result, lower the overclock if it happens often` | Lower the memory overclock of that GPU, then check with `hashwarp --selftest` |
 | Rejected shares with a `low difficulty` reason | Make sure the pool's stratum flavour is detected (`--esm`), and report it with `--log-debug json` output |
 | `Epoch N needs ...` and the GPU paused | The GPU doesn't have enough free memory for the DAG |

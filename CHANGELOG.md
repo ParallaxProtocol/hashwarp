@@ -43,10 +43,10 @@ One build per system mines on **NVIDIA** GPUs with CUDA (driver 525 or newer, ev
 - Command lines and configuration from 1.x keep working: the ethminer style options (`-P`, `-U`, `--cu-devices` ...) are still accepted.
 - The output is different. If a script parses Hashwarp's log, use `--log-format json` or the API's `/api/v1/summary` instead. Hashrates are written MH/s and difficulties GH.
 - The API listens only on `127.0.0.1` unless `--api-bind` says otherwise, and is read only unless `--api-allow-control` is given (with `--api-token` on other addresses). `--api-port` still works, read only.
-- The Windows archive no longer has `fix-opencl-icd.vbs`: NVIDIA GPUs mine with CUDA, which needs no OpenCL registration. See [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/v2.1.x/guides/mining/troubleshooting) if an AMD GPU isn't found.
+- The Windows archive no longer has `fix-opencl-icd.vbs`: NVIDIA GPUs mine with CUDA, which needs no OpenCL registration. See [Troubleshooting Hashwarp on Windows](https://docs.parallaxprotocol.org/hashwarp/troubleshooting) if an AMD GPU isn't found.
 
 ### Documentation
 
 - [Mining with Hashwarp](https://github.com/ParallaxProtocol/hashwarp/blob/v2.0.0/docs/MINING.md): pools, solo mining, GPUs, tuning, overclocking, logs, HiveOS and mmpOS.
 - [API](https://github.com/ParallaxProtocol/hashwarp/blob/v2.0.0/docs/API.md): dashboard, rigs, JSON API, Prometheus.
-- [Parallax mining guides](https://docs.parallaxprotocol.org/v2.1.x/guides/mining/gpu)
+- [Hashwarp in the Parallax docs](https://docs.parallaxprotocol.org/hashwarp/getting-started)
