@@ -76,9 +76,10 @@ TEST(oc, invalid_values)
     EXPECT_THROW(validateOc(parse({"--oc-core-clock", "50"})), std::invalid_argument);
     EXPECT_THROW(validateOc(parse({"--oc-fan", "101"})), std::invalid_argument);
     EXPECT_THROW(validateOc(parse({"--oc-profile", "nope"})), std::invalid_argument);
-    EXPECT_THROW(validateOc(parse({"--oc-profiles", R"({"tuned": {}})"})), std::invalid_argument);
-    EXPECT_THROW(validateOc(parse({"--oc-profiles", R"({"a": {"memoffset": 1}})"})),
-        std::invalid_argument);
+    // Not raw strings: MSVC can't take them as macro arguments
+    const std::string builtin = "{\"tuned\": {}}", unknownKey = "{\"a\": {\"memoffset\": 1}}";
+    EXPECT_THROW(validateOc(parse({"--oc-profiles", builtin})), std::invalid_argument);
+    EXPECT_THROW(validateOc(parse({"--oc-profiles", unknownKey})), std::invalid_argument);
     EXPECT_THROW(validateOc(parse({"--oc-profiles", "[1]"})), std::invalid_argument);
     EXPECT_NO_THROW(validateOc(parse({"--oc-core-clock", "0", "--oc-mem-offset", "-500"})));
 }

@@ -94,12 +94,14 @@ TEST_F(LogFileTest, json_lines)
         << EthRed "✘ rejected" EthReset " \"low\"\tdifficulty";
     g_logFormat = dev::LogFormat::Text;
 
+    // Not raw strings: MSVC can't take them as macro arguments
+    const std::string message =
+        "\"level\":\"warn\",\"source\":\"share\",\"msg\":\"✘ rejected \\\"low\\\"\\tdifficulty\"";
+    const std::string fields = ",\"gpu\":1,\"ms\":42.5,\"stale\":false}";
     std::string line = readFile(path);
     EXPECT_EQ(line.compare(0, 9, "{\"time\":\""), 0) << line;
-    EXPECT_NE(line.find(R"("level":"warn","source":"share","msg":"✘ rejected \"low\"\tdifficulty")"),
-        std::string::npos)
-        << line;
-    EXPECT_NE(line.find(R"(,"gpu":1,"ms":42.5,"stale":false})"), std::string::npos) << line;
+    EXPECT_NE(line.find(message), std::string::npos) << line;
+    EXPECT_NE(line.find(fields), std::string::npos) << line;
     EXPECT_EQ(line.find('\x1b'), std::string::npos);
 }
 
