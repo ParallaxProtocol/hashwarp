@@ -120,6 +120,14 @@ bool GpuControl::changed() const
            m_origPower;
 }
 
+void GpuControl::keep()
+{
+    m_fanSet = m_memClockSet = m_coreClockSet = false;
+    m_origMemOffset.reset();
+    m_origCoreOffset.reset();
+    m_origPower.reset();
+}
+
 void GpuControl::restore()
 {
     if (m_fanSet)
@@ -134,10 +142,7 @@ void GpuControl::restore()
         setCoreClock(0);
     if (m_origPower)
         setPower(*m_origPower);
-    m_fanSet = m_memClockSet = m_coreClockSet = false;
-    m_origMemOffset.reset();
-    m_origCoreOffset.reset();
-    m_origPower.reset();
+    keep();
 }
 
 namespace
@@ -224,6 +229,8 @@ public:
             m_limits.maxCoreClock = od.coreMaxMHz;
             m_limits.minMemClock = od.memMinMHz;
             m_limits.maxMemClock = od.memMaxMHz;
+            m_limits.coreStateClock = od.coreMHz;
+            m_limits.memStateClock = od.memMHz;
         }
         unsigned now = 0, lo = 0, hi = 0, def = 0;
         if (wrap_amdsysfs_get_power_caps(m_h, m_index, &now, &lo, &hi, &def) == 0)

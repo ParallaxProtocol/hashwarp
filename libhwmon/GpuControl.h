@@ -44,6 +44,7 @@ struct OcLimits
     int minCoreOffset = 0, maxCoreOffset = 0;
     int minMemOffset = 0, maxMemOffset = 0;
     unsigned minMemClock = 0, maxMemClock = 0;
+    unsigned coreStateClock = 0, memStateClock = 0;  // MHz, current top states (AMD)
     unsigned minPowerW = 0, maxPowerW = 0, defaultPowerW = 0;
 };
 
@@ -64,6 +65,8 @@ public:
     /// The first change of each value records the original one, which restore() puts back
     std::vector<std::string> apply(const OcSettings& _s);
     void restore();
+    /// Keeps the current values: restore() won't change them
+    void keep();
     /// Whether apply() changed anything that restore() would undo
     bool changed() const;
 

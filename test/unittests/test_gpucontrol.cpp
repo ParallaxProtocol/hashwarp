@@ -237,6 +237,8 @@ TEST_F(AmdControlTest, rdna_apply_and_restore)
     EXPECT_EQ(c->id(), "amd-7a1c2b3d4e5f6071");
     EXPECT_EQ(c->limits().maxCoreClock, 3150u);
     EXPECT_EQ(c->limits().maxMemClock, 1200u);
+    EXPECT_EQ(c->limits().coreStateClock, 2615u);
+    EXPECT_EQ(c->limits().memStateClock, 1000u);
     EXPECT_EQ(c->limits().defaultPowerW, 220u);
     EXPECT_EQ(c->limits().maxPowerW, 250u);
 
