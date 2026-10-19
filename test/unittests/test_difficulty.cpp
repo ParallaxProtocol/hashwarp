@@ -61,6 +61,6 @@ TEST(difficulty, hashes_to_target_is_inverse)
 
 TEST(difficulty, formatted_hashes_do_not_overflow_suffixes)
 {
-    EXPECT_EQ(getFormattedHashes(115.48e6), "115.48 Mh");
-    EXPECT_EQ(getFormattedHashes(2.5e15), "2500.00 Th");
+    EXPECT_EQ(getFormattedHashes(115.48e6), "115.48 MH");
+    EXPECT_EQ(getFormattedHashes(2.5e15), "2500.00 TH");
 }

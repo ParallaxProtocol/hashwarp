@@ -215,25 +215,62 @@ so it's started again after a watchdog exit.
 
 ## Logs and output
 
-Every 10 seconds (`--display-interval`) hashwarp prints a summary line:
+Each line has the time, the level, the source and the message. The source is `gpu0`, `gpu1` ...
+for a GPU (each GPU's in its own color), `pool` (or `node` when solo mining), `share`, `block`,
+`miner`, `api`, `hwmon`, `oc` or `tune`:
 
 ```
- m 12:00:10 hashwarp 115.48 Mh/s (60s 115.40, 15m 115.21) eff 112.30 A42 R1 - cu0 115.48 65C
+12:00:00  INFO  pool   Connected to eu.rplant.xyz:17159
+12:00:00  INFO  pool   Protocol EthereumStratum/1.0.0
+12:00:01  INFO  gpu0   NVIDIA GeForce RTX 4090 · PCI 01:00.0 · compute 8.9 · 23.59 GB
+12:00:01  INFO  gpu0   DAG epoch 83 (1.00 GB) built in 235 ms · 20.59 GB free
+12:00:04  INFO  share  ✔ accepted gpu0 · diff 4.29 GH · 42 ms · A1
+12:00:10  INFO  miner  115.48 MH/s · 60s 115.40 · 15m 115.21 · eff 112.30 · A42 R1
+12:00:10  INFO  gpu0   115.48 MH/s · 65°C · fan 70% · 280 W · 412 kH/J
 ```
 
-current speed, 1 and 15 minute averages, effective hashrate (what the accepted shares of the last
-15 minutes are worth, from 2 minutes on), accepted and rejected shares and each GPU's speed and
-temperature. Every 60 seconds (`--stats-interval`) a table per GPU follows, with temperatures, fan,
-power, efficiency (kh/W) and clocks, the pool, its difficulty and the blocks left before the next
-epoch.
+Every 10 seconds (`--display-interval`) hashwarp prints the current speed, the 1 and 15 minute
+averages, the effective hashrate (what the accepted shares of the last 15 minutes are worth, from
+2 minutes on) and the accepted (`A`), rejected (`R`) and wrong (`F`) shares, then a line per GPU
+with its speed, temperature, fan, power and efficiency. With one GPU it all fits on one line.
+Every 60 seconds (`--stats-interval`) a table per GPU follows, with the clocks too, the pool, its
+difficulty and the blocks left before the next epoch.
 
 | Option | Meaning |
 | ------ | ------- |
-| `--log-file hashwarp.log` | Also write the log to a file, with full dates and without colors |
+| `--log-file hashwarp.log` | Also write the log to a file, with ISO 8601 times and without colors |
 | `--log-max-size 20`, `--log-keep 3` | Rotate the file at 20 MB, keep 3 old ones |
-| `--log-level` | `error`, `warn`, `info` (default), `debug` or `trace` |
+| `--log-level` | `error`, `warn`, `info` (default), `debug` or `trace`. Debug lines also name the thread |
+| `--log-format json` | One JSON object per line, on the console and in the log file (see below) |
 | `--log-debug json,per-gpu` | Extra debug output: stratum `json` messages, `per-gpu` solutions |
-| `--no-color`, `--syslog`, `--stdout` | Plain output, output for syslog, log to stdout instead of stderr |
+| `--no-color`, `--syslog`, `--stdout` | No colors; for syslog and journald (no time, and the level as a `<N>` priority); log to stdout instead of stderr |
+
+On a console without UTF-8 (`LANG` not set to a UTF-8 locale) the symbols are replaced by ASCII:
+`|` for `·`, `+` for `✔`, `x` for `✘`.
+
+### JSON lines
+
+`--log-format json` writes each line as an object with `time`, `level`, `source` and `msg` (the
+text above, without colors), for log collectors and scripts:
+
+```json
+{"time":"2026-10-18T12:00:04.512+02:00","level":"info","source":"share","msg":"✔ accepted gpu0 · diff 4.29 GH · 42 ms · A1","event":"share","result":"accepted","gpu":0,"difficulty":4294967296,"ms":42}
+```
+
+The lines worth reading by a program also have an `event` and its values:
+
+| `event` | Values |
+| ------- | ------ |
+| `connected`, `disconnected` | `host` |
+| `difficulty` | `epoch`, `difficulty` (hashes per share) |
+| `job` (debug level) | `block` |
+| `share` | `result` (`accepted`, `stale` or `rejected`), `gpu`, `difficulty`, `ms`, `reason` |
+| `block` | `gpu`, `height`, `ms` |
+| `hashrate` | `hashrate`, `hashrate60`, `hashrate900` (H/s), `accepted`, `rejected`, `failed`, `effective` |
+| `gpu` | `gpu`, `hashrate`, `paused`, `temp` (°C), `fan` (%), `power` (W) |
+| `tune_step`, `tuned` | `--oc-tune`'s measurements and results |
+
+With `--log-level debug` the lines also have the `thread`.
 
 ## HiveOS and mmpOS
 

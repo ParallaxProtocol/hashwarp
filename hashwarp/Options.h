@@ -91,6 +91,7 @@ struct Options
     unsigned logMaxSize = 20;  // MB
     unsigned logKeep = 3;
     std::string logLevel = "info";
+    std::string logFormat = "text";
     std::vector<std::string> logDebug;  // debug categories
     unsigned legacyVerbosity = 0;       // legacy -v bitmask
     bool noColor = false;

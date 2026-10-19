@@ -125,7 +125,7 @@ std::string dev::getScaledSize(double _value, double _divisor, int _precision, s
 {
     double _newvalue = _value;
     size_t i = 0;
-    while (_newvalue > _divisor && i < (_numsizes - 1))
+    while (_newvalue >= _divisor * 0.9995 && i < (_numsizes - 1))
     {
         _newvalue /= _divisor;
         i++;
@@ -140,7 +140,7 @@ std::string dev::getScaledSize(double _value, double _divisor, int _precision, s
 
 std::string dev::getFormattedHashes(double _hr, ScaleSuffix _suffix, int _precision)
 {
-    static string suffixes[] = {"h", "Kh", "Mh", "Gh", "Th"};
+    static string suffixes[] = {"H", "kH", "MH", "GH", "TH"};
     return dev::getScaledSize(_hr, 1000.0, _precision, suffixes, 5, _suffix);
 }
 

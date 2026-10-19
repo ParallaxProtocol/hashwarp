@@ -84,3 +84,51 @@ TEST_F(LogFileTest, rotates_when_full)
     EXPECT_LE(fs::file_size(dir / "hashwarp.log.1"), 2000u + 200u);
     EXPECT_NE(readFile(path).find("line 199"), std::string::npos);
 }
+
+TEST_F(LogFileTest, json_lines)
+{
+    auto path = dir / "hashwarp.log";
+    dev::setLogFile(path.string());
+    g_logFormat = dev::LogFormat::Json;
+    clogs(dev::WarnChannel, "share").with("gpu", 1).with("ms", 42.5).with("stale", false)
+        << EthRed "✘ rejected" EthReset " \"low\"\tdifficulty";
+    g_logFormat = dev::LogFormat::Text;
+
+    std::string line = readFile(path);
+    EXPECT_EQ(line.compare(0, 9, "{\"time\":\""), 0) << line;
+    EXPECT_NE(line.find(R"("level":"warn","source":"share","msg":"✘ rejected \"low\"\tdifficulty")"),
+        std::string::npos)
+        << line;
+    EXPECT_NE(line.find(R"(,"gpu":1,"ms":42.5,"stale":false})"), std::string::npos) << line;
+    EXPECT_EQ(line.find('\x1b'), std::string::npos);
+}
+
+TEST_F(LogFileTest, text_columns)
+{
+    auto path = dir / "hashwarp.log";
+    dev::setLogFile(path.string());
+    clogs(dev::NoteChannel, "pool") << "Connected";
+    std::string line = readFile(path);
+    // 2026-10-18T21:44:32.123-03:00 INFO  pool   Connected
+    EXPECT_EQ(line[10], 'T') << line;
+    EXPECT_NE(line.find(" INFO  pool   Connected"), std::string::npos) << line;
+}
+
+TEST(log, sources_and_ascii)
+{
+    std::string name = dev::getThreadName();
+    dev::setThreadName("cuda-3");
+    EXPECT_EQ(dev::threadLogSource(), "gpu3");
+    dev::setThreadName("cl-12");
+    EXPECT_EQ(dev::threadLogSource(), "gpu12");
+    dev::setThreadName("cpu-0");
+    EXPECT_EQ(dev::threadLogSource(), "cpu0");
+    dev::setThreadName("sim");
+    EXPECT_EQ(dev::threadLogSource(), "pool");
+    dev::setThreadName("watchdog");
+    EXPECT_EQ(dev::threadLogSource(), "miner");
+    dev::setThreadName(name.c_str());
+    EXPECT_EQ(dev::plainText(EthLime "✔ accepted" EthReset " · 54°C → ok", false),
+        "+ accepted | 54C -> ok");
+    EXPECT_EQ(dev::plainText("✔ 54°C"), "✔ 54°C");
+}

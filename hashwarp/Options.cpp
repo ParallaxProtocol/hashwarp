@@ -475,6 +475,10 @@ void registerOptions(CLI::App& _app, Options& _o)
     _app.add_option("--log-level", _o.logLevel, "error, warn, info, debug or trace")
         ->check(CLI::IsMember({"error", "warn", "info", "debug", "trace"}))
         ->group(c_groupLogging);
+    _app.add_option("--log-format", _o.logFormat,
+            "text, or json: one JSON object per line, on the console and in the log file")
+        ->check(CLI::IsMember({"text", "json"}))
+        ->group(c_groupLogging);
     _app.add_option("--log-debug", _o.logDebug,
             "Extra debug output (implies --log-level debug): json, per-gpu, connect, "
             "switch, submit, flow")
