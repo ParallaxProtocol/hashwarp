@@ -83,6 +83,7 @@ struct Options
     std::vector<std::string> ocFan;    // % or auto
     std::string ocProfiles;            // JSON object of named profiles ("oc-profiles")
     std::string ocTune;                // all or core: run the tuner and exit
+    bool ocReset = false;              // set stock settings and exit
     std::string ocTuneFile;            // tuning results (default next to the configuration)
 
     // Logging and display

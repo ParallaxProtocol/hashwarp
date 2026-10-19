@@ -89,6 +89,11 @@ int nvmlDeviceGetPowerUsage(void*, unsigned* _mw)
     *_mw = 200000;
     return 0;
 }
+int nvmlDeviceGetClockInfo(void*, int _type, unsigned* _mhz)
+{
+    *_mhz = _type == 0 ? (g_state.lockedMax ? g_state.lockedMax : 2700) : 10500;
+    return 0;
+}
 int nvmlDeviceGetMaxClockInfo(void*, int _type, unsigned* _mhz)
 {
     *_mhz = _type == 0 ? 3000 : 10500;

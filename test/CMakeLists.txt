@@ -4,6 +4,7 @@ add_executable(hashwarp-unittests
   unittests/test_epoch.cpp
   unittests/test_nonce_segments.cpp
   unittests/test_oc.cpp
+  unittests/test_octune.cpp
   unittests/test_options.cpp
   unittests/test_httpapi.cpp
   unittests/test_log.cpp

@@ -8,7 +8,7 @@ hunter_add_package(CLI11)
 find_package(CLI11 CONFIG REQUIRED)
 
 # Options, first run wizard and console output (shared with the unit tests)
-add_library(hashwarp-cli STATIC Options.cpp Options.h Oc.cpp Oc.h Wizard.cpp Wizard.h Console.cpp Console.h
+add_library(hashwarp-cli STATIC Options.cpp Options.h Oc.cpp Oc.h OcTune.cpp OcTune.h Wizard.cpp Wizard.h Console.cpp Console.h
   Hotkeys.cpp Hotkeys.h)
 target_include_directories(hashwarp-cli PUBLIC ..)
 target_link_libraries(hashwarp-cli PUBLIC CLI11::CLI11 parallaxcore PRIVATE poolprotocols devcore

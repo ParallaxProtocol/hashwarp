@@ -45,6 +45,7 @@
 #include "Console.h"
 #include "Hotkeys.h"
 #include "Oc.h"
+#include "OcTune.h"
 #include "Options.h"
 #include "Wizard.h"
 
@@ -403,6 +404,16 @@ public:
         m_PoolSettings.reportHashrate = m_opts.reportHashrate;
         m_cliDisplayInterval = m_opts.displayInterval;
 
+        if (!m_opts.ocTune.empty())
+        {
+            // Offline, at an easy difficulty: wrong results show up within seconds (a
+            // 4090 finds about 5 solutions a second; more of them make the hashrate noisy)
+            if (m_opts.benchmarkBlock < 0)
+                m_opts.benchmarkBlock = c_selftestBlock;
+            m_PoolSettings.simulationDifficulty = 0.005;
+            m_FarmSettings.noEval = false;
+            m_FarmSettings.hwMon = 2;
+        }
         if (m_opts.selftestSeconds)
         {
             // Offline, at an easy difficulty so every GPU finds solutions quickly
@@ -506,6 +517,11 @@ public:
 
         // Initialize Farm
         new Farm(m_DevicesCollection, m_FarmSettings, m_CUSettings, m_CLSettings, m_CPSettings);
+        if (m_opts.ocReset)
+        {
+            g_exitCode = resetOc() ? 0 : 1;
+            return;
+        }
         applyOc();
 
         // Run Miner
@@ -514,11 +530,46 @@ public:
     }
 
 private:
+    // --oc-reset: stock settings on every selected GPU, kept after exit
+    bool resetOc()
+    {
+        bool ok = true;
+        hashwarp::TuneResults none;
+        for (const auto& d : m_DevicesCollection)
+        {
+            if (d.second.subscriptionType == DeviceSubscriptionTypeEnum::None)
+                continue;
+            std::string gpu = d.second.name + " (" + d.first + ")", error, note;
+            dev::GpuControl* control = Farm::f().gpuControl(d.second, error);
+            if (!control)
+            {
+                cwarn << gpu << ": " << error;
+                ok = false;
+                continue;
+            }
+            auto errors =
+                control->apply(*hashwarp::gpuProfile("stock", none, "", control->limits(), note));
+            control->keep();
+            for (const auto& e : errors)
+                cwarn << gpu << ": " << e;
+            if (errors.empty())
+                cnote << gpu << ": stock settings";
+            ok = ok && errors.empty();
+        }
+        return ok;
+    }
+
     // Sets the overclocking of the GPUs before mining starts
     void applyOc()
     {
         if (m_ocRequests.empty())
             return;
+        if (!m_opts.ocTune.empty())
+        {
+            cwarn << "--oc-tune starts from stock settings, the other --oc options are ignored";
+            m_ocRequests.clear();
+            return;
+        }
         // Also when hashwarp exits otherwise (and the watchdog gives up on a hung GPU,
         // which may well be the overclocking's fault)
         std::atexit([]() { Farm::f().restoreOc(); });
@@ -800,6 +851,12 @@ private:
                 cnote << "Press " EthWhite "h" EthReset " for the keys";
         }
 
+        if (!m_opts.ocTune.empty())
+        {
+            g_exitCode = runOcTune() ? 0 : 1;
+            g_running = false;
+        }
+
         // Stay in non-busy wait till signals arrive (or the self-test ends)
         unique_lock<mutex> clilock(m_climtx);
         auto selftestEnd =
@@ -837,6 +894,240 @@ private:
 
         cnote << "Terminated!";
         return;
+    }
+
+    // --oc-tune: searches each GPU's settings while mining offline, saves them and
+    // returns whether every GPU could be tuned. The GPUs go back to their settings on exit
+    bool runOcTune()
+    {
+        using clock = std::chrono::steady_clock;
+        const auto settle = std::chrono::seconds(10);
+        const auto sampleEvery = std::chrono::seconds(5);
+        const size_t samples = 4, maxSamples = 8;  // the median of them
+        const double unsteady = 0.03;  // spread that takes more samples
+        bool memory = m_opts.ocTune == "all";
+
+        cnote << EthWhiteBold "Overclocking tuner" EthReset " ("
+              << (memory ? "memory and core clocks" : "core clock") << "). It takes "
+              << (memory ? "10 to 20" : "about 5")
+              << " minutes; the GPUs mine offline meanwhile. Ctrl+C stops it without saving";
+        std::atexit([]() { Farm::f().restoreOc(); });
+        std::at_quick_exit([]() { Farm::f().restoreOc(); });
+
+        // Every GPU hashing: DAG built, kernels tuned
+        auto deadline = clock::now() + std::chrono::minutes(5);
+        while (g_running && clock::now() < deadline)
+        {
+            bool all = onIoThread([]() {
+                auto miners = Farm::f().getMiners();
+                const TelemetryType& t = Farm::f().Telemetry();
+                if (miners.empty() || t.miners.size() < miners.size())
+                    return false;
+                for (const auto& m : t.miners)
+                    if (m.hashrate <= 0)
+                        return false;
+                return true;
+            });
+            if (all)
+                break;
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        std::this_thread::sleep_for(settle);
+        if (!g_running)
+            return false;
+
+        struct Tuning
+        {
+            unsigned index;
+            std::string name;
+            dev::GpuControl* control;
+            std::unique_ptr<hashwarp::OcSearch> search;
+            clock::time_point stepStart, lastSample;
+            unsigned errorsAtStart = 0;
+            std::vector<std::pair<double, double>> samples;  // H/s, W
+            bool done = false;
+            bool warned = false;
+        };
+        std::vector<Tuning> gpus;
+        hashwarp::TuneResults none, previous;
+        std::string path = hashwarp::tuneFilePath(m_opts);
+        try
+        {
+            previous = hashwarp::loadTuneResults(path);
+        }
+        catch (const std::exception& ex)
+        {
+            cwarn << ex.what() << ", starting a new file";
+        }
+        bool allTuned = true;
+        for (const auto& miner : Farm::f().getMiners())
+        {
+            Tuning t;
+            t.index = miner->Index();
+            t.name = miner->getDescriptor().name;
+            std::string gpu = "GPU " + std::to_string(t.index) + " " + t.name;
+            std::string error;
+            t.control = Farm::f().gpuControl(miner->getDescriptor(), error);
+            if (!t.control)
+            {
+                cwarn << gpu << ": can't be tuned, " << error;
+                allTuned = false;
+                continue;
+            }
+            unsigned coreMHz = onIoThread([&]() {
+                const TelemetryType& tm = Farm::f().Telemetry();
+                return t.index < tm.miners.size() ? tm.miners[t.index].sensors.coreMHz : 0u;
+            });
+            std::string note;
+            auto errors = t.control->apply(
+                *hashwarp::gpuProfile("stock", none, "", t.control->limits(), note));
+            if (!errors.empty())
+            {
+                for (const auto& e : errors)
+                    cwarn << gpu << ": " << e;
+                cwarn << gpu << ": can't be tuned";
+                allTuned = false;
+                continue;
+            }
+            // --oc-tune=core keeps the memory clock tuned before
+            dev::OcSettings tunedMemory;
+            auto old = previous.find(t.control->id());
+            if (!memory && old != previous.end())
+                tunedMemory = old->second.settings;
+            t.search.reset(
+                new hashwarp::OcSearch(t.control->limits(), memory, coreMHz, tunedMemory));
+            gpus.push_back(std::move(t));
+        }
+
+        auto startStep = [&](Tuning& _t) {
+            auto settings = _t.search->next();
+            if (!settings)
+            {
+                _t.done = true;
+                return;
+            }
+            std::string gpu = "GPU " + std::to_string(_t.index);
+            for (const auto& e : _t.control->apply(*settings))
+                cwarn << gpu << ": " << e;
+            cnote << gpu << ": trying " << _t.search->phase();
+            _t.stepStart = _t.lastSample = clock::now();
+            _t.samples.clear();
+            auto s = Farm::f().getSolutions(_t.index);
+            _t.errorsAtStart = s.failed + s.rejected;
+        };
+        for (auto& t : gpus)
+            startStep(t);
+
+        auto pending = [&]() {
+            return std::any_of(gpus.begin(), gpus.end(), [](const Tuning& _t) { return !_t.done; });
+        };
+        while (g_running && pending())
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            auto now = clock::now();
+            for (auto& t : gpus)
+            {
+                if (t.done || now - t.stepStart < settle || now - t.lastSample < sampleEvery)
+                    continue;
+                t.lastSample = now;
+                t.samples.push_back(onIoThread([&]() {
+                    const TelemetryType& tm = Farm::f().Telemetry();
+                    if (t.index >= tm.miners.size())
+                        return std::make_pair(0.0, 0.0);
+                    return std::make_pair(
+                        (double)tm.miners[t.index].hashrate, tm.miners[t.index].sensors.powerW);
+                }));
+                if (t.samples.size() < samples)
+                    continue;
+                // Medians: a sample can catch the GPU busy with something else
+                std::vector<double> hs, ws;
+                bool stopped = false;
+                for (const auto& sample : t.samples)
+                {
+                    hs.push_back(sample.first);
+                    ws.push_back(sample.second);
+                    stopped = stopped || sample.first <= 0;
+                }
+                auto median = [](std::vector<double>& _v) {
+                    std::sort(_v.begin(), _v.end());
+                    size_t n = _v.size();
+                    return n % 2 ? _v[n / 2] : (_v[n / 2 - 1] + _v[n / 2]) / 2;
+                };
+                double h = median(hs), w = median(ws);
+                if (h > 0 && (hs.back() - hs.front()) / h > unsteady &&
+                    t.samples.size() < maxSamples)
+                {
+                    if (!t.warned)
+                        cwarn << "GPU " << t.index << ": the hashrate is unsteady, measuring "
+                                 "longer. Is something else using the GPU (a desktop, video)?";
+                    t.warned = true;
+                    continue;
+                }
+                auto s = Farm::f().getSolutions(t.index);
+                unsigned wrong = s.failed + s.rejected - t.errorsAtStart;
+                cnote << "GPU " << t.index << ": " << t.search->phase() << ": "
+                      << getFormattedHashes(h) << "/s, " << (int)(w + 0.5) << " W"
+                      << (wrong ? ", " + std::to_string(wrong) + " wrong results" : "")
+                      << (stopped ? ", stopped hashing" : "");
+                t.search->report(h, w, wrong > 0 || stopped);
+                startStep(t);
+            }
+        }
+        if (!g_running)
+        {
+            cwarn << "Tuning stopped, nothing saved";
+            return false;
+        }
+
+        hashwarp::TuneResults results = previous;
+        cnote << EthWhiteBold "Tuning results" EthReset;
+        auto efficiency = [](double _h, double _w) {
+            return _w > 0 ? " (" + getFormattedHashes(_h / _w) + "/W)" : std::string();
+        };
+        for (const auto& t : gpus)
+        {
+            const auto& s = *t.search;
+            std::string gpu = "GPU " + std::to_string(t.index) + " " + t.name;
+            std::string stock = getFormattedHashes(s.baseHashrate()) + "/s " +
+                                std::to_string((int)(s.basePowerW() + 0.5)) + " W" +
+                                efficiency(s.baseHashrate(), s.basePowerW());
+            if (!s.found())
+            {
+                cwarn << gpu << ": stock settings are best, " << stock;
+                allTuned = false;
+                continue;
+            }
+            cnote << gpu << ": " << s.best().str() << ": " << getFormattedHashes(s.bestHashrate())
+                  << "/s " << (int)(s.bestPowerW() + 0.5) << " W"
+                  << efficiency(s.bestHashrate(), s.bestPowerW()) << ", stock " << stock;
+            hashwarp::TunedGpu r;
+            r.name = t.name;
+            r.mode = m_opts.ocTune;
+            r.settings = s.best();
+            // A stock memory clock isn't a setting: applying it would undo another tool's
+            if (r.settings.memOffset == 0)
+                r.settings.memOffset.reset();
+            if (r.settings.memClock == t.control->limits().memStateClock)
+                r.settings.memClock.reset();
+            r.hashrate = s.bestHashrate();
+            r.powerW = s.bestPowerW();
+            auto old = previous.find(t.control->id());
+            if (!memory && old != previous.end() && old->second.mode == "all")
+                r.mode = "all";  // the memory clock tuned before, which the search kept
+            results[t.control->id()] = r;
+        }
+        try
+        {
+            hashwarp::saveTuneResults(path, results);
+            cnote << "Saved to " << path << ". Mine with --oc-profile tuned"
+                  << (memory ? " (or efficient for the core clock only)" : " or efficient");
+        }
+        catch (const std::exception& ex)
+        {
+            cerror << ex.what();
+            return false;
+        }
+        return allTuned;
     }
 
     // Runs _f on the io_service thread (which owns the telemetry) and returns its result

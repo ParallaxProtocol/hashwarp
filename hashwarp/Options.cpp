@@ -41,7 +41,7 @@ const std::map<std::string, unsigned> c_debugCategories = {{"json", LOG_JSON},
 
 // Options which are never written to a configuration file
 const std::set<std::string> c_notSaved = {"help", "help-all", "version", "config", "save-config",
-    "list-devices", "benchmark", "selftest", "oc-tune"};
+    "list-devices", "benchmark", "selftest", "oc-tune", "oc-reset"};
 
 bool isInteger(const std::string& _s)
 {
@@ -455,6 +455,10 @@ void registerOptions(CLI::App& _app, Options& _o)
             "safe")
         ->check(CLI::IsMember({"all", "core"}))
         ->group(c_groupOc);
+    _app.add_flag("--oc-reset", _o.ocReset,
+            "Set the stock clocks, power limits and fan control of the GPUs and exit, e.g. "
+            "after hashwarp was killed while overclocking")
+        ->group(c_groupOc);
     _app.add_option("--oc-tune-file", _o.ocTuneFile,
             "Tuning results (default hashwarp-oc.json next to the configuration file)")
         ->group(c_groupOc);
@@ -600,7 +604,8 @@ std::vector<std::string> validateOptions(Options& _o)
     if (_o.soloRequested && _o.solo.empty())
         _o.solo = c_defaultSoloUrl;
 
-    if (!_o.listDevices && _o.benchmarkBlock < 0 && !_o.selftestSeconds && _o.saveConfig.empty() &&
+    if (!_o.listDevices && _o.benchmarkBlock < 0 && !_o.selftestSeconds && _o.ocTune.empty() &&
+        !_o.ocReset && _o.saveConfig.empty() &&
         _o.pools.empty() && !_o.soloRequested)
         throw std::invalid_argument(
             "No pool configured: use --pool and --wallet, or --solo to mine on your own node");
