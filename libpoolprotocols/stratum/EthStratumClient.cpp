@@ -6,10 +6,7 @@
 
 #include "EthStratumClient.h"
 
-#ifdef _WIN32
-// Needed for certificates validation on TLS connections
-#include <wincrypt.h>
-#endif
+#include "../Tls.h"
 
 using boost::asio::ip::tcp;
 
@@ -70,59 +67,7 @@ void EthStratumClient::init_socket()
             m_securesocket->set_verify_callback(
                 make_verbose_verification(boost::asio::ssl::rfc2818_verification(m_conn->Host())));
         }
-#ifdef _WIN32
-        HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
-        if (hStore == nullptr)
-        {
-            return;
-        }
-
-        X509_STORE* store = X509_STORE_new();
-        PCCERT_CONTEXT pContext = nullptr;
-        while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) != nullptr)
-        {
-            X509* x509 = d2i_X509(
-                nullptr, (const unsigned char**)&pContext->pbCertEncoded, pContext->cbCertEncoded);
-            if (x509 != nullptr)
-            {
-                X509_STORE_add_cert(store, x509);
-                X509_free(x509);
-            }
-        }
-
-        CertFreeCertificateContext(pContext);
-        CertCloseStore(hStore, 0);
-
-        SSL_CTX_set_cert_store(ctx.native_handle(), store);
-#else
-        // OpenSSL is linked statically, its built in default paths point into the build
-        // machine: look for the distribution's CA bundle
-        const char* certPath = getenv("SSL_CERT_FILE");
-        const char* const bundles[] = {
-            "/etc/ssl/certs/ca-certificates.crt",  // Debian, Ubuntu, Arch, HiveOS
-            "/etc/pki/tls/certs/ca-bundle.crt",    // Fedora, RHEL
-            "/etc/ssl/ca-bundle.pem",              // openSUSE
-            "/etc/ssl/cert.pem",                   // Alpine
-        };
-        bool loaded = false;
-        for (const char* bundle : bundles)
-        {
-            boost::system::error_code ec;
-            ctx.load_verify_file(certPath ? certPath : bundle, ec);
-            if (!ec || certPath)
-            {
-                loaded = !ec;
-                break;
-            }
-        }
-        if (!loaded)
-        {
-            cwarn << "Can't load the CA certificates from "
-                  << (certPath ? certPath : "the usual locations")
-                  << ", TLS certificate checks will likely fail. Set SSL_CERT_FILE to the CA "
-                     "bundle";
-        }
-#endif
+        loadCaCertificates(ctx);
     }
     else
     {
