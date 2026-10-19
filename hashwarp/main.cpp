@@ -345,6 +345,7 @@ public:
         }
         catch (const CLI::CallForVersion&)
         {
+            cout << "hashwarp " << bi->project_version << endl;
             return false;
         }
         catch (const CLI::ParseError& e)
