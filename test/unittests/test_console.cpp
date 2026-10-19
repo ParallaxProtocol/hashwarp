@@ -51,19 +51,35 @@ TelemetryType twoGpus()
 }
 }  // namespace
 
-TEST(console, summary_line)
+TEST(console, report_lines)
 {
     PoolStatus pool;
     pool.connected = true;
-    std::string line = strip(summaryLine(twoGpus(), pool));
-    EXPECT_NE(line.find("115.48 Mh/s (60s 115.40, 15m 115.20)"), std::string::npos) << line;
-    EXPECT_NE(line.find("eff 112.30"), std::string::npos) << line;
-    EXPECT_NE(line.find("A42 R1"), std::string::npos) << line;
-    EXPECT_NE(line.find("cu0 115.48 65C"), std::string::npos) << line;
-    EXPECT_NE(line.find("cu1 paused"), std::string::npos) << line;
+    auto lines = reportLines(twoGpus(), pool, true);
+    ASSERT_EQ(lines.size(), 3u);
+    std::string farm = strip(lines[0].text);
+    EXPECT_EQ(lines[0].source, "miner");
+    EXPECT_NE(farm.find("115.48 MH/s · 60s 115.40 · 15m 115.20"), std::string::npos) << farm;
+    EXPECT_NE(farm.find("eff 112.30"), std::string::npos) << farm;
+    EXPECT_NE(farm.find("A42 R1"), std::string::npos) << farm;
+    EXPECT_EQ(lines[1].source, "gpu0");
+    EXPECT_EQ(strip(lines[1].text), "115.48 MH/s · 65°C · fan 70% · 280 W · 412 kH/J");
+    EXPECT_EQ(strip(lines[2].text), "paused");
 
     pool.connected = false;
-    EXPECT_EQ(strip(summaryLine(twoGpus(), pool)).find("Not connected"), 0u);
+    EXPECT_EQ(strip(reportLines(twoGpus(), pool, true)[0].text).find("not connected"), 0u);
+}
+
+TEST(console, one_gpu_on_one_line)
+{
+    PoolStatus pool;
+    pool.connected = true;
+    auto t = twoGpus();
+    t.miners.pop_back();
+    auto lines = reportLines(t, pool, false);
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_NE(strip(lines[0].text).find("A42 R1 · 65°C · fan 70% · 280 W"), std::string::npos)
+        << strip(lines[0].text);
 }
 
 TEST(console, stats_table)
@@ -78,11 +94,11 @@ TEST(console, stats_table)
     ASSERT_EQ(lines.size(), 5u);  // header, 2 GPUs, total, footer
     for (auto& l : lines)
         l = strip(l);
-    EXPECT_NE(lines[0].find("Mh/s"), std::string::npos);
+    EXPECT_NE(lines[0].find("MH/s"), std::string::npos);
     EXPECT_NE(lines[1].find("NVIDIA GeForce RTX 4090"), std::string::npos);
     EXPECT_NE(lines[1].find("115.48"), std::string::npos);
     EXPECT_NE(lines[1].find("280W"), std::string::npos);
-    EXPECT_NE(lines[1].find("412"), std::string::npos) << lines[1];  // kh/W
+    EXPECT_NE(lines[1].find("412"), std::string::npos) << lines[1];  // kH/J
     EXPECT_NE(lines[2].find("paused"), std::string::npos);
     EXPECT_NE(lines[2].find("Overheating"), std::string::npos);
     EXPECT_EQ(lines[3].find("Total"), 0u);

@@ -1,3 +1,5 @@
+#define LOG_SOURCE "hwmon"
+
 /*
  * A trivial little dlopen()-based wrapper library for the
  * NVIDIA NVML library, to allow runtime discovery of NVML on an
@@ -69,8 +71,7 @@ wrap_nvml_handle* wrap_nvml_create()
 #endif
     if (nvml_dll == nullptr)
     {
-        cwarn << "Failed to obtain all required NVML function pointers";
-        cwarn << "NVIDIA hardware monitoring disabled";
+        cwarn << "NVML lacks functions hashwarp needs: no NVIDIA sensors";
         return nullptr;
     }
         
@@ -131,8 +132,7 @@ wrap_nvml_handle* wrap_nvml_create()
         nvmlh->nvmlDeviceGetTemperature == nullptr || nvmlh->nvmlDeviceGetFanSpeed == nullptr ||
         nvmlh->nvmlDeviceGetPowerUsage == nullptr)
     {
-        cwarn << "Failed to obtain all required NVML function pointers";
-        cwarn << "NVIDIA hardware monitoring disabled";
+        cwarn << "NVML lacks functions hashwarp needs: no NVIDIA sensors";
 
         wrap_dlclose(nvmlh->nvml_dll);
         free(nvmlh);

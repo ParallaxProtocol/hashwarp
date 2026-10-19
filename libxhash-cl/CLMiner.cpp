@@ -24,14 +24,6 @@ namespace eth
 // to the assembly code for the binary kernels.
 const size_t c_maxSearchResults = 4;
 
-struct CLChannel : public LogChannel
-{
-    static const char* name() { return EthOrange "cl"; }
-    static const int verbosity = 2;
-    static const bool debug = false;
-};
-#define cllog clog(CLChannel)
-
 /**
  * Returns the name of a numerical cl_int error
  * Takes constants from CL/cl.h and returns them in a readable format
@@ -266,10 +258,10 @@ CLMiner::CLMiner(unsigned _index, CLSettings _settings, DeviceDescriptor& _devic
 
 CLMiner::~CLMiner()
 {
-    DEV_BUILD_LOG_PROGRAMFLOW(cllog, "cl-" << m_index << " CLMiner::~CLMiner() begin");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cl-" << m_index << " CLMiner::~CLMiner() begin");
     stopWorking();
     kick_miner();
-    DEV_BUILD_LOG_PROGRAMFLOW(cllog, "cl-" << m_index << " CLMiner::~CLMiner() end");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cl-" << m_index << " CLMiner::~CLMiner() end");
 }
 
 // NOTE: The following struct must match the one defined in
@@ -402,11 +394,11 @@ void CLMiner::workLoop()
 
 #ifdef DEV_BUILD
                 if (g_logOptions & LOG_SWITCH)
-                    cllog << "Switch time: "
+                    cnote << "Switch time: "
                           << std::chrono::duration_cast<std::chrono::microseconds>(
                                  std::chrono::steady_clock::now() - m_workSwitchStart)
                                  .count()
-                          << " us.";
+                          << " us";
 #endif
             }
 
@@ -436,8 +428,8 @@ void CLMiner::workLoop()
                         Farm::f().submitProof(Solution{
                             nonce, mix, current, std::chrono::steady_clock::now(), m_index});
 
-                        cdebug << "cl-" << m_index << " Job: " << current.header.abridged() << " Sol: 0x"
-                              << toHex(nonce) << EthReset;
+                        cdebug << "Solution 0x" << toHex(nonce) << " of job "
+                               << current.header.abridged();
                     }
                 }
             }
@@ -445,8 +437,8 @@ void CLMiner::workLoop()
             if (!inRange)
             {
                 if (current.header != w.header || current.startNonce != startNonce)
-                    cllog << "Nonce range of job " << w.header.abridged()
-                          << " exhausted. Waiting for new work ...";
+                    cnote << "Searched all nonces of job " << w.header.abridged()
+                          << ", waiting for a new job";
                 current = w;
                 current.startNonce = startNonce;
 
@@ -690,13 +682,13 @@ bool CLMiner::initDevice()
     else
     {
         // Don't know what to do with this
-        cllog << "Unrecognized Platform";
+        cerror << "Unknown OpenCL platform";
         return false;
     }
     if (!m_settings.noExit && (m_hwmoninfo.deviceType != HwMonitorInfoType::AMD))
     {
         m_settings.noExit = true;
-        cllog << "no exit option enabled for non AMD opencl device";
+        cdebug << "--cl-noexit set: not an AMD GPU";
     }
 
     if (m_deviceDescriptor.clPlatformVersionMajor == 1 &&
@@ -705,29 +697,25 @@ bool CLMiner::initDevice()
     {
         if (m_deviceDescriptor.clPlatformType == ClPlatformTypeEnum::Clover)
         {
-            cllog
-                << "OpenCL " << m_deviceDescriptor.clPlatformVersion
-                << " not supported, but platform Clover might work nevertheless. USE AT OWN RISK!";
+            cwarn << "OpenCL " << m_deviceDescriptor.clPlatformVersion
+                  << " is too old, Clover may work anyway";
         }
         else
         {
-            cllog << "OpenCL " << m_deviceDescriptor.clPlatformVersion
-                  << " not supported. Minimum required version is 1.2";
+            cerror << "OpenCL " << m_deviceDescriptor.clPlatformVersion
+                   << " is too old, hashwarp needs 1.2";
             return false;
         }
     }
 
     ostringstream s;
-    s << "Using Device : " << m_deviceDescriptor.uniqueId << " " << m_deviceDescriptor.clName;
-
+    s << m_deviceDescriptor.clName << " · PCI " << m_deviceDescriptor.uniqueId << " · ";
     if (!m_deviceDescriptor.clNvCompute.empty())
-        s << " (Compute " + m_deviceDescriptor.clNvCompute + ")";
+        s << "compute " << m_deviceDescriptor.clNvCompute;
     else
-        s << " " << m_deviceDescriptor.clDeviceVersion;
-
-    s << " Memory : " << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
-    s << " (" << m_deviceDescriptor.totalMemory << " B)";
-    cllog << s.str();
+        s << m_deviceDescriptor.clDeviceVersion;
+    s << " · " << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
+    cnote << s.str();
 
     if ((m_deviceDescriptor.clPlatformType == ClPlatformTypeEnum::Amd) &&
         (m_deviceDescriptor.clMaxComputeUnits != 36))
@@ -739,9 +727,8 @@ bool CLMiner::initDevice()
             m_settings.globalWorkSize =
                 ((m_settings.globalWorkSize / m_settings.localWorkSize) + 1) *
                 m_settings.localWorkSize;
-        cnote << "Adjusting CL work multiplier for " << m_deviceDescriptor.clMaxComputeUnits
-              << " CUs. Adjusted work multiplier: "
-              << m_settings.globalWorkSize / m_settings.localWorkSize;
+        cdebug << "Work multiplier " << m_settings.globalWorkSize / m_settings.localWorkSize
+               << " for " << m_deviceDescriptor.clMaxComputeUnits << " compute units";
     }
 
 
@@ -760,17 +747,16 @@ bool CLMiner::initEpoch_internal()
     // Check whether the current device has sufficient memory every time we recreate the dag
     if (m_deviceDescriptor.totalMemory < RequiredMemory)
     {
-        cllog << "Epoch " << m_epochContext.epochNumber << " requires "
-              << dev::getFormattedMemory((double)RequiredMemory) << " memory. Only "
+        cwarn << "Epoch " << m_epochContext.epochNumber << " needs "
+              << dev::getFormattedMemory((double)RequiredMemory) << ", the GPU has "
               << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory)
-              << " available on device.";
+              << ": paused until the next epoch";
         pause(MinerPauseEnum::PauseDueToInsufficientMemory);
         return true;  // This will prevent to exit the thread and
                       // Eventually resume mining when changing coin or epoch (NiceHash)
     }
 
-    cllog << "Generating split DAG + Light (total): "
-          << dev::getFormattedMemory((double)RequiredMemory);
+    cdebug << "Building the DAG: " << dev::getFormattedMemory((double)RequiredMemory);
 
     try
     {
@@ -804,7 +790,6 @@ bool CLMiner::initEpoch_internal()
         // TODO: Just use C++ raw string literal.
         string code;
 
-        cllog << "OpenCL kernel";
         code = string(xhash_cl, xhash_cl + sizeof(xhash_cl));
 
         addDefinition(code, "WORKSIZE", m_settings.localWorkSize);
@@ -833,9 +818,9 @@ bool CLMiner::initEpoch_internal()
         }
         catch (cl::BuildError const& buildErr)
         {
-            cwarn << "OpenCL kernel build log:\n"
+            cerror << "Building the OpenCL kernel failed:\n"
                   << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(m_device);
-            cwarn << "OpenCL kernel build error (" << buildErr.err() << "):\n" << buildErr.what();
+            cerror << "OpenCL kernel build error " << buildErr.err() << ": " << buildErr.what();
             pause(MinerPauseEnum::PauseDueToInitEpochError);
             return true;
         }
@@ -843,7 +828,7 @@ bool CLMiner::initEpoch_internal()
         // create buffer for dag
         try
         {
-            cllog << "Creating DAG buffer, size: "
+            cdebug << "DAG buffer "
                   << dev::getFormattedMemory((double)m_epochContext.dagSize) << ", free: "
                   << dev::getFormattedMemory(
                          (double)(m_deviceDescriptor.totalMemory - RequiredMemory));
@@ -862,7 +847,7 @@ bool CLMiner::initEpoch_internal()
                 m_dag.push_back(
                     cl::Buffer(m_context[0], CL_MEM_READ_WRITE, (m_epochContext.dagSize) / 2));
             }
-            cllog << "Creating light cache buffer, size: "
+            cdebug << "Light cache buffer "
                   << dev::getFormattedMemory((double)m_epochContext.lightSize);
             m_light.clear();
             bool light_on_host = false;
@@ -875,8 +860,8 @@ bool CLMiner::initEpoch_internal()
                 if ((err.err() == CL_OUT_OF_RESOURCES) || (err.err() == CL_OUT_OF_HOST_MEMORY))
                 {
                     // Ok, no room for light cache on GPU. Try allocating on host
-                    clog(WarnChannel) << "No room on GPU, allocating light cache on host";
-                    clog(WarnChannel) << "Generating DAG will take minutes instead of seconds";
+                    cwarn << "Not enough memory for the light cache: building the DAG takes "
+                             "minutes";
                     light_on_host = true;
                 }
                 else
@@ -886,9 +871,7 @@ bool CLMiner::initEpoch_internal()
             {
                 m_light.emplace_back(m_context[0], CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
                     m_epochContext.lightSize);
-                cllog << "WARNING: Generating DAG will take minutes, not seconds";
             }
-            cllog << "Loading kernels";
 
             m_searchKernel = cl::Kernel(program, "search");
 
@@ -904,7 +887,6 @@ bool CLMiner::initEpoch_internal()
             return true;
         }
         // create buffer for header
-        cllog << "Creating buffer for header.";
         m_header.clear();
         m_header.push_back(cl::Buffer(m_context[0], CL_MEM_READ_ONLY, 32));
 
@@ -914,7 +896,6 @@ bool CLMiner::initEpoch_internal()
         m_searchKernel.setArg(4, m_dagItems);
 
         // create mining buffers
-        cllog << "Creating mining buffer";
         m_searchBuffer.clear();
         m_searchBuffer.emplace_back(m_context[0], CL_MEM_READ_WRITE, sizeof(SearchResults));
 
@@ -946,12 +927,13 @@ bool CLMiner::initEpoch_internal()
 
         auto dagTime = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - startInit);
-        cllog << dev::getFormattedMemory((double)m_epochContext.dagSize)
-              << " of DAG data generated in " << dagTime.count() << " ms.";
+        cnote << "DAG epoch " << m_epochContext.epochNumber << " ("
+              << dev::getFormattedMemory((double)m_epochContext.dagSize) << ") built in "
+              << dagTime.count() << " ms";
     }
     catch (cl::Error const& err)
     {
-        cllog << ethCLErrorHelper("OpenCL init failed", err);
+        cerror << ethCLErrorHelper("OpenCL init failed", err);
         pause(MinerPauseEnum::PauseDueToInitEpochError);
         return true;
     }

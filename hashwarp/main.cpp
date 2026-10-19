@@ -69,13 +69,6 @@ std::atomic<int> g_exitCode = {0};
 condition_variable g_shouldstop;
 boost::asio::io_service g_io_service;  // The IO service itself
 
-struct MiningChannel : public LogChannel
-{
-    static const char* name() { return EthGreen " m"; }
-};
-
-#define minelog clog(MiningChannel)
-
 #if ETH_DBUS
 #include <hashwarp/DBusInt.h>
 #endif
@@ -154,13 +147,26 @@ public:
         return pool;
     }
 
+    static void printReport()
+    {
+        bool perGpu = g_logFormat == LogFormat::Json || Farm::f().getMiners().size() > 1;
+        for (const auto& l : hashwarp::reportLines(Farm::f().Telemetry(), poolStatus(), perGpu))
+        {
+            dev::LogOutputStream<dev::NoteChannel> log(l.source.c_str());
+            log.with("event", l.source == "miner" ? "hashrate" : "gpu");
+            for (const auto& f : l.fields)
+                log.with(f.first.c_str(), f.second);
+            log << l.text;
+        }
+    }
+
     static void printStats()
     {
         std::vector<hashwarp::GpuStatus> gpus;
         for (auto const& miner : Farm::f().getMiners())
             gpus.push_back({miner->getDescriptor().name, miner->pausedString()});
         for (const auto& line : hashwarp::statsTable(Farm::f().Telemetry(), gpus, poolStatus()))
-            minelog << line;
+            cnote << line;
     }
 
     // Runs on the io_service thread (like the telemetry it reads)
@@ -173,18 +179,18 @@ public:
             auto miner = Farm::f().getMiner(idx);
             if (!miner)
             {
-                cnote << "There is no GPU " << idx;
+                cnote << "There is no gpu" << idx;
                 return;
             }
             if (miner->pauseTest(MinerPauseEnum::PauseDueToAPIRequest))
             {
                 miner->resume(MinerPauseEnum::PauseDueToAPIRequest);
-                cnote << "GPU " << idx << " resumed";
+                cgpunote(idx) << "Resumed";
             }
             else
             {
                 miner->pause(MinerPauseEnum::PauseDueToAPIRequest);
-                cnote << "GPU " << idx << " paused (press " << idx << " again to resume)";
+                cgpunote(idx) << "Paused (press " << idx << " again to resume)";
             }
             return;
         }
@@ -227,7 +233,7 @@ public:
             cnote << "Log level " << logLevelName(g_logLevel);
             break;
         case 'q':
-            cnote << "Quitting ...";
+            cnote << "Quitting";
             raise(SIGINT);
             break;
         default:
@@ -246,7 +252,7 @@ public:
                 printStats();
             }
             else
-                minelog << hashwarp::summaryLine(Farm::f().Telemetry(), poolStatus());
+                printReport();
 
 #if ETH_DBUS
             dbusint.send(Farm::f().Telemetry().str().c_str());
@@ -323,12 +329,16 @@ public:
         }
         catch (const CLI::CallForHelp&)
         {
-            cout << app.help();
+            cout << "hashwarp " << bi->project_version << " - Parallax (XHash) GPU miner" << endl
+                 << endl
+                 << app.help();
             return false;
         }
         catch (const CLI::CallForAllHelp&)
         {
-            cout << app.help("", CLI::AppFormatMode::All);
+            cout << "hashwarp " << bi->project_version << " - Parallax (XHash) GPU miner" << endl
+                 << endl
+                 << app.help("", CLI::AppFormatMode::All);
             return false;
         }
         catch (const CLI::CallForVersion&)
@@ -355,6 +365,10 @@ public:
 
         std::vector<string> warnings = hashwarp::validateOptions(m_opts);
         applyLogging();
+        cnote << EthWhiteBold "hashwarp " << bi->project_version << EthReset " · "
+              << bi->system_name << "/" << bi->build_type << "/" << bi->compiler_id;
+        if (app.count("--config"))
+            cnote << "Configuration " << app.get_config_ptr()->as<std::string>();
 
         // Farm
         m_FarmSettings.dagLoadMode = m_opts.dagLoadMode;
@@ -543,7 +557,7 @@ private:
             dev::GpuControl* control = Farm::f().gpuControl(d.second, error);
             if (!control)
             {
-                cwarn << gpu << ": " << error;
+                clogs(dev::WarnChannel, "oc") << gpu << ": " << error;
                 ok = false;
                 continue;
             }
@@ -551,9 +565,9 @@ private:
                 control->apply(*hashwarp::gpuProfile("stock", none, "", control->limits(), note));
             control->keep();
             for (const auto& e : errors)
-                cwarn << gpu << ": " << e;
+                clogs(dev::WarnChannel, "oc") << gpu << ": " << e;
             if (errors.empty())
-                cnote << gpu << ": stock settings";
+                clogs(dev::NoteChannel, "oc") << gpu << ": stock settings";
             ok = ok && errors.empty();
         }
         return ok;
@@ -566,7 +580,8 @@ private:
             return;
         if (!m_opts.ocTune.empty())
         {
-            cwarn << "--oc-tune starts from stock settings, the other --oc options are ignored";
+            clogs(dev::WarnChannel, "oc")
+                << "--oc-tune starts from stock settings, the other --oc options are ignored";
             m_ocRequests.clear();
             return;
         }
@@ -583,17 +598,16 @@ private:
         }
         catch (const std::exception& ex)
         {
-            cwarn << ex.what();
+            clogs(dev::WarnChannel, "oc") << ex.what();
         }
         for (const auto& r : m_ocRequests)
         {
             const DeviceDescriptor& d = m_DevicesCollection.at(r.uniqueId);
-            std::string gpu = "GPU " + std::to_string(r.gpu) + " " + d.name;
             std::string error;
             dev::GpuControl* control = Farm::f().gpuControl(d, error);
             if (!control)
             {
-                cwarn << gpu << ": can't overclock, " << error;
+                cgpuwarn(r.gpu) << "Can't overclock: " << error;
                 continue;
             }
             dev::OcSettings s;
@@ -603,7 +617,7 @@ private:
                 auto profile = hashwarp::gpuProfile(
                     r.request.gpuProfile, tuned, control->id(), control->limits(), note);
                 if (!profile)
-                    cwarn << gpu << ": profile " << r.request.gpuProfile << " " << note;
+                    cgpuwarn(r.gpu) << "Profile " << r.request.gpuProfile << " " << note;
                 else
                     s = *profile;
             }
@@ -611,15 +625,16 @@ private:
             if (s.empty())
                 continue;
             auto errors = control->apply(s);
-            cnote << gpu << ": " << s.str() << (note.empty() ? "" : " (" + note + ")");
+            cgpunote(r.gpu) << "Overclock " << s.str() << (note.empty() ? "" : " (" + note + ")");
             for (const auto& e : errors)
-                cwarn << gpu << ": " << e;
+                cgpuwarn(r.gpu) << e;
         }
     }
 
     void applyLogging()
     {
         g_logLevel = dev::parseLogLevel(m_opts.logLevel);
+        g_logFormat = dev::parseLogFormat(m_opts.logFormat);
         g_logOptions = hashwarp::debugCategories(m_opts);
         g_logSyslog = g_logSyslog || m_opts.syslog || getenv("SYSLOG");
         g_logNoColor = g_logNoColor || m_opts.noColor || g_logSyslog || getenv("NO_COLOR");
@@ -629,7 +644,7 @@ private:
 
 #ifndef DEV_BUILD
         if (g_logOptions & (LOG_CONNECT | LOG_SWITCH | LOG_SUBMIT | LOG_PROGRAMFLOW))
-            cwarn << "connect, switch, submit and flow debug output need a build with "
+            cwarn << "The connect, switch, submit and flow debug output need a build with "
                      "-DDEVBUILD=ON";
 #endif
     }
@@ -758,7 +773,7 @@ private:
                 (vendor == GpuVendor::Intel && m_opts.disableIntel))
             {
                 if (explicitSelection)
-                    cwarn << "GPU " << selected[k] << " is selected but its vendor is disabled";
+                    cwarn << "gpu" << selected[k] << " is selected but its vendor is disabled";
                 continue;
             }
             if (d.subscriptionType == DeviceSubscriptionTypeEnum::None)
@@ -823,7 +838,7 @@ private:
         new PoolManager(m_PoolSettings);
         if (m_mode != OperationMode::Simulation)
             for (auto conn : m_PoolSettings.connections)
-                cnote << "Configured pool " << conn->Host() + ":" + to_string(conn->Port());
+                cdebug << "Configured pool " << conn->Host() + ":" + to_string(conn->Port());
 
 #if API_CORE
 
@@ -874,7 +889,7 @@ private:
                 break;
         }
         if (g_interrupted)
-            cnote << "Got interrupt ...";
+            cnote << "Stopping (Ctrl+C)";
         hotkeys.reset();
         if (m_opts.selftestSeconds)
         {
@@ -892,7 +907,7 @@ private:
         if (PoolManager::p().isRunning())
             PoolManager::p().stop();
 
-        cnote << "Terminated!";
+        cnote << "Stopped";
         return;
     }
 
@@ -907,10 +922,10 @@ private:
         const double unsteady = 0.03;  // spread that takes more samples
         bool memory = m_opts.ocTune == "all";
 
-        cnote << EthWhiteBold "Overclocking tuner" EthReset " ("
-              << (memory ? "memory and core clocks" : "core clock") << "). It takes "
-              << (memory ? "10 to 20" : "about 5")
-              << " minutes; the GPUs mine offline meanwhile. Ctrl+C stops it without saving";
+clogs(dev::NoteChannel, "tune")
+            << EthWhiteBold "Tuning the " << (memory ? "memory and core clocks" : "core clock")
+            << EthReset " · takes " << (memory ? "10 to 20" : "about 5")
+            << " minutes, the GPUs mine offline · Ctrl+C stops without saving";
         std::atexit([]() { Farm::f().restoreOc(); });
         std::at_quick_exit([]() { Farm::f().restoreOc(); });
 
@@ -957,7 +972,7 @@ private:
         }
         catch (const std::exception& ex)
         {
-            cwarn << ex.what() << ", starting a new file";
+            clogs(dev::WarnChannel, "tune") << ex.what() << ", starting a new file";
         }
         bool allTuned = true;
         for (const auto& miner : Farm::f().getMiners())
@@ -965,12 +980,11 @@ private:
             Tuning t;
             t.index = miner->Index();
             t.name = miner->getDescriptor().name;
-            std::string gpu = "GPU " + std::to_string(t.index) + " " + t.name;
             std::string error;
             t.control = Farm::f().gpuControl(miner->getDescriptor(), error);
             if (!t.control)
             {
-                cwarn << gpu << ": can't be tuned, " << error;
+                cgpuwarn(t.index) << "Can't be tuned: " << error;
                 allTuned = false;
                 continue;
             }
@@ -984,8 +998,8 @@ private:
             if (!errors.empty())
             {
                 for (const auto& e : errors)
-                    cwarn << gpu << ": " << e;
-                cwarn << gpu << ": can't be tuned";
+                    cgpuwarn(t.index) << e;
+                cgpuwarn(t.index) << "Can't be tuned";
                 allTuned = false;
                 continue;
             }
@@ -1006,10 +1020,9 @@ private:
                 _t.done = true;
                 return;
             }
-            std::string gpu = "GPU " + std::to_string(_t.index);
             for (const auto& e : _t.control->apply(*settings))
-                cwarn << gpu << ": " << e;
-            cnote << gpu << ": trying " << _t.search->phase();
+                cgpuwarn(_t.index) << e;
+            cgpunote(_t.index) << "Trying " << _t.search->phase();
             _t.stepStart = _t.lastSample = clock::now();
             _t.samples.clear();
             auto s = Farm::f().getSolutions(_t.index);
@@ -1058,48 +1071,59 @@ private:
                     t.samples.size() < maxSamples)
                 {
                     if (!t.warned)
-                        cwarn << "GPU " << t.index << ": the hashrate is unsteady, measuring "
-                                 "longer. Is something else using the GPU (a desktop, video)?";
+                        cgpuwarn(t.index) << "The hashrate is unsteady, measuring longer. Is "
+                                             "something else using the GPU (a desktop, video)?";
                     t.warned = true;
                     continue;
                 }
                 auto s = Farm::f().getSolutions(t.index);
                 unsigned wrong = s.failed + s.rejected - t.errorsAtStart;
-                cnote << "GPU " << t.index << ": " << t.search->phase() << ": "
-                      << getFormattedHashes(h) << "/s, " << (int)(w + 0.5) << " W"
-                      << (wrong ? ", " + std::to_string(wrong) + " wrong results" : "")
-                      << (stopped ? ", stopped hashing" : "");
+                cgpunote(t.index)
+                        .with("event", "tune_step")
+                        .with("step", t.search->phase())
+                        .with("hashrate", h)
+                        .with("power", w)
+                        .with("wrong", wrong)
+                    << t.search->phase() << ": " << getFormattedHashes(h) << "/s · "
+                    << (int)(w + 0.5) << " W"
+                    << (wrong ? " · " + std::to_string(wrong) + " wrong results" : "")
+                    << (stopped ? " · stopped hashing" : "");
                 t.search->report(h, w, wrong > 0 || stopped);
                 startStep(t);
             }
         }
         if (!g_running)
         {
-            cwarn << "Tuning stopped, nothing saved";
+            clogs(dev::WarnChannel, "tune") << "Stopped, nothing saved";
             return false;
         }
 
         hashwarp::TuneResults results = previous;
-        cnote << EthWhiteBold "Tuning results" EthReset;
+clogs(dev::NoteChannel, "tune") << EthWhiteBold "Results" EthReset;
         auto efficiency = [](double _h, double _w) {
-            return _w > 0 ? " (" + getFormattedHashes(_h / _w) + "/W)" : std::string();
+            return _w > 0 ? " · " + getFormattedHashes(_h / _w) + "/J" : std::string();
         };
         for (const auto& t : gpus)
         {
             const auto& s = *t.search;
-            std::string gpu = "GPU " + std::to_string(t.index) + " " + t.name;
-            std::string stock = getFormattedHashes(s.baseHashrate()) + "/s " +
+            std::string stock = getFormattedHashes(s.baseHashrate()) + "/s · " +
                                 std::to_string((int)(s.basePowerW() + 0.5)) + " W" +
                                 efficiency(s.baseHashrate(), s.basePowerW());
             if (!s.found())
             {
-                cwarn << gpu << ": stock settings are best, " << stock;
+                cgpuwarn(t.index) << "Stock settings are best: " << stock;
                 allTuned = false;
                 continue;
             }
-            cnote << gpu << ": " << s.best().str() << ": " << getFormattedHashes(s.bestHashrate())
-                  << "/s " << (int)(s.bestPowerW() + 0.5) << " W"
-                  << efficiency(s.bestHashrate(), s.bestPowerW()) << ", stock " << stock;
+            cgpunote(t.index)
+                    .with("event", "tuned")
+                    .with("settings", s.best().str())
+                    .with("hashrate", s.bestHashrate())
+                    .with("power", s.bestPowerW())
+                << EthLime "✔ " EthReset << s.best().str() << ": "
+                << getFormattedHashes(s.bestHashrate()) << "/s · " << (int)(s.bestPowerW() + 0.5)
+                << " W" << efficiency(s.bestHashrate(), s.bestPowerW()) << " (stock " << stock
+                << ")";
             hashwarp::TunedGpu r;
             r.name = t.name;
             r.mode = m_opts.ocTune;
@@ -1119,8 +1143,9 @@ private:
         try
         {
             hashwarp::saveTuneResults(path, results);
-            cnote << "Saved to " << path << ". Mine with --oc-profile tuned"
-                  << (memory ? " (or efficient for the core clock only)" : " or efficient");
+clogs(dev::NoteChannel, "tune")
+                << "Saved to " << path << ". Mine with --oc-profile tuned"
+                << (memory ? " (or efficient for the core clock only)" : " or efficient");
         }
         catch (const std::exception& ex)
         {
@@ -1173,13 +1198,13 @@ private:
             allPassed = allPassed && passed;
             float hr = i < t.miners.size() ? t.miners[i].hashrate60 : 0;
             if (passed)
-                cnote << "GPU " << i << " " << miner->getDescriptor().name << ": " EthLime "PASS" EthReset
-                      << " (" << s.accepted << " solutions verified, "
-                      << getFormattedHashes(hr) << "/s)";
+                cgpunote(i) << EthLime "✔ PASS" EthReset " " << miner->getDescriptor().name << " · "
+                            << s.accepted << " solutions verified · " << getFormattedHashes(hr)
+                            << "/s";
             else
-                cerror << "GPU " << i << " " << miner->getDescriptor().name << ": FAIL ("
-                       << s.accepted << " correct, " << s.failed + s.rejected << " incorrect"
-                       << (s.accepted ? "" : ", no solution found") << ")";
+                cgpuerror(i) << "✘ FAIL " << miner->getDescriptor().name << " · " << s.accepted
+                             << " correct, " << s.failed + s.rejected << " wrong"
+                             << (s.accepted ? "" : " · no solution found");
         }
         return allPassed;
     }
@@ -1246,18 +1271,8 @@ int main(int argc, char** argv)
     // 3 - Other exceptions
     // 4 - Possible corruption
 
-#if defined(_WIN32)
-    // Need to change the code page from the default OEM code page (437) so that
-    // UTF-8 characters are displayed correctly in the console
-    SetConsoleOutputCP(CP_UTF8);
-#endif
-
-    // Always out release version
-    auto* bi = hashwarp_get_buildinfo();
-    cout << endl
-         << "hashwarp " << bi->project_version << " - Parallax (XHash) GPU miner" << endl
-         << "Build: " << bi->system_name << "/" << bi->build_type << "/" << bi->compiler_id << endl
-         << endl;
+    // On Windows it switches the console to UTF-8
+    g_logUtf8 = dev::consoleUtf8();
 
     // Without arguments use the default configuration file, or create one
     std::vector<std::string> args(argv, argv + argc);
@@ -1294,7 +1309,6 @@ int main(int argc, char** argv)
                 return 2;
             }
         }
-        cout << "Using configuration " << config << endl << endl;
         args.push_back("--config");
         args.push_back(config);
     }
@@ -1324,7 +1338,7 @@ int main(int argc, char** argv)
                 g_logNoColor = true;
                 // Set output mode to handle virtual terminal sequences
                 // Only works on Windows 10, but most users should use it anyway
-                HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+                HANDLE hOut = GetStdHandle(g_logStdout ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
                 if (hOut != INVALID_HANDLE_VALUE)
                 {
                     DWORD dwMode = 0;
@@ -1339,7 +1353,6 @@ int main(int argc, char** argv)
 #endif
 
             cli.execute();
-            cout << endl << endl;
             return g_exitCode;
         }
         catch (std::invalid_argument& ex1)

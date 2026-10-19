@@ -27,8 +27,18 @@ struct GpuStatus
     std::string pauseReason;  // Empty if mining
 };
 
-/// One line summary: speeds, effective hashrate, shares and a short per GPU status
-std::string summaryLine(const dev::eth::TelemetryType& _t, const PoolStatus& _pool);
+/// A line of the periodic report, with the fields of the JSON log format
+struct ReportLine
+{
+    std::string source;  // miner, or gpuN
+    std::string text;
+    std::vector<std::pair<std::string, double>> fields;
+};
+
+/// The periodic report: the farm's speeds and shares, then one line per GPU with
+/// _perGpu (otherwise the only GPU's sensors are on the farm's line)
+std::vector<ReportLine> reportLines(
+    const dev::eth::TelemetryType& _t, const PoolStatus& _pool, bool _perGpu);
 
 /// Per GPU statistics table, one string per line
 std::vector<std::string> statsTable(const dev::eth::TelemetryType& _t,

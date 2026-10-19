@@ -76,7 +76,7 @@ static size_t getTotalPhysAvailableMemory()
     if (rv != KERN_SUCCESS)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at host_page_size(...) \""
-              << "\"\n";
+              << "\"";
         mach_error("host_page_size(...) error :", rv);
         return 0;
     }
@@ -85,7 +85,7 @@ static size_t getTotalPhysAvailableMemory()
     if (rv != KERN_SUCCESS)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at host_statistics(...) \""
-              << "\"\n";
+              << "\"";
         mach_error("host_statistics(...) error :", rv);
         return 0;
     }
@@ -95,7 +95,7 @@ static size_t getTotalPhysAvailableMemory()
     if (pages == -1L)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at sysconf(_SC_AVPHYS_PAGES) \""
-              << strerror(errno) << "\"\n";
+              << strerror(errno) << "\"";
         return 0;
     }
 
@@ -103,7 +103,7 @@ static size_t getTotalPhysAvailableMemory()
     if (page_size == -1L)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at sysconf(_SC_PAGESIZE) \""
-              << strerror(errno) << "\"\n";
+              << strerror(errno) << "\"";
         return 0;
     }
 
@@ -141,7 +141,7 @@ unsigned CPUMiner::getNumDevices()
     if (cpus_available <= 0)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at std::thread::hardware_concurrency \""
-              << cpus_available << " were found." << "\"\n";
+              << cpus_available << " were found." << "\"";
         return 0;
     }
     return cpus_available;
@@ -152,7 +152,7 @@ unsigned CPUMiner::getNumDevices()
     if (cpus_available == -1L)
     {
         cwarn << "Error in func " << __FUNCTION__ << " at sysconf(_SC_NPROCESSORS_ONLN) \""
-              << strerror(errno) << "\"\n";
+              << strerror(errno) << "\"";
         return 0;
     }
     return cpus_available;
@@ -166,13 +166,6 @@ unsigned CPUMiner::getNumDevices()
 
 /* ######################## CPU Miner ######################## */
 
-struct CPUChannel : public LogChannel
-{
-    static const char* name() { return EthOrange "cp"; }
-    static const int verbosity = 2;
-};
-#define cpulog clog(CPUChannel)
-
 
 CPUMiner::CPUMiner(unsigned _index, CPSettings _settings, DeviceDescriptor& _device)
   : Miner("cpu-", _index), m_settings(_settings)
@@ -183,10 +176,10 @@ CPUMiner::CPUMiner(unsigned _index, CPSettings _settings, DeviceDescriptor& _dev
 
 CPUMiner::~CPUMiner()
 {
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::~CPUMiner() begin");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::~CPUMiner() begin");
     stopWorking();
     kick_miner();
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::~CPUMiner() end");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::~CPUMiner() end");
 }
 
 
@@ -195,10 +188,10 @@ CPUMiner::~CPUMiner()
  */
 bool CPUMiner::initDevice()
 {
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::initDevice begin");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::initDevice begin");
 
-    cpulog << "Using CPU: " << m_deviceDescriptor.cpCpuNumer << " " << m_deviceDescriptor.cuName
-           << " Memory : " << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
+    cnote << "CPU " << m_deviceDescriptor.cpCpuNumer << " · " << m_deviceDescriptor.cuName
+          << " · " << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
 
 #if defined(__APPLE__) || defined(__MACOSX)
 /* Not supported on MAC OSX. See
@@ -213,10 +206,8 @@ bool CPUMiner::initDevice()
     err = sched_setaffinity(0, sizeof(cpuset), &cpuset);
     if (err != 0)
     {
-        cwarn << "Error in func " << __FUNCTION__ << " at sched_setaffinity() \"" << strerror(errno)
-              << "\"\n";
-        cwarn << "cp-" << m_index << "could not bind thread to cpu" << m_deviceDescriptor.cpCpuNumer
-              << "\n";
+        cwarn << "Error in func " << __FUNCTION__ << " at sched_setaffinity() \"" << strerror(errno) << "\"";
+        cwarn << "Can't bind the thread to CPU " << m_deviceDescriptor.cpCpuNumer;
     }
 #else
     DWORD_PTR dwThreadAffinityMask = 1i64 << m_deviceDescriptor.cpCpuNumer;
@@ -224,12 +215,11 @@ bool CPUMiner::initDevice()
     previous_mask = SetThreadAffinityMask(GetCurrentThread(), dwThreadAffinityMask);
     if (previous_mask == NULL)
     {
-        cwarn << "cp-" << m_index << "could not bind thread to cpu" << m_deviceDescriptor.cpCpuNumer
-              << "\n";
+        cwarn << "Can't bind the thread to CPU " << m_deviceDescriptor.cpCpuNumer;
         // Handle Errorcode (GetLastError) ??
     }
 #endif
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::initDevice end");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::initDevice end");
     return true;
 }
 
@@ -288,8 +278,8 @@ void CPUMiner::search(const dev::eth::WorkPackage& w)
             h256 mix{reinterpret_cast<byte*>(r.mix_hash.bytes), h256::ConstructFromPointer};
             auto sol = Solution{r.nonce, mix, w, std::chrono::steady_clock::now(), m_index};
 
-            cpulog << EthWhite << "Job: " << w.header.abridged()
-                   << " Sol: " << toHex(sol.nonce, HexPrefix::Add) << EthReset;
+            cdebug << "Solution " << toHex(sol.nonce, HexPrefix::Add) << " of job "
+                   << w.header.abridged();
             Farm::f().submitProof(sol);
         }
         nonce += blocksize;
@@ -305,7 +295,7 @@ void CPUMiner::search(const dev::eth::WorkPackage& w)
  */
 void CPUMiner::workLoop()
 {
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::workLoop() begin");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::workLoop() begin");
 
     WorkPackage current;
     current.header = h256();
@@ -351,7 +341,7 @@ void CPUMiner::workLoop()
         }
     }
 
-    DEV_BUILD_LOG_PROGRAMFLOW(cpulog, "cp-" << m_index << " CPUMiner::workLoop() end");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cp-" << m_index << " CPUMiner::workLoop() end");
 }
 
 

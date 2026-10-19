@@ -85,6 +85,7 @@ public:
 
 private:
     void startSession();
+    void negotiationFailed();  // logs why the protocol was refused
     void disconnect_finalize();
     void enqueue_response_plea();
     std::chrono::milliseconds dequeue_response_plea();

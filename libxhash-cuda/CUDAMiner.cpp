@@ -26,13 +26,6 @@ using namespace std;
 using namespace dev;
 using namespace eth;
 
-struct CUDAChannel : public LogChannel
-{
-    static const char* name() { return EthOrange "cu"; }
-    static const int verbosity = 2;
-};
-#define cudalog clog(CUDAChannel)
-
 namespace
 {
 CUSettings withDeviceSettings(CUSettings _settings, const DeviceDescriptor& _device)
@@ -57,17 +50,17 @@ CUDAMiner::CUDAMiner(unsigned _index, CUSettings _settings, DeviceDescriptor& _d
 
 CUDAMiner::~CUDAMiner()
 {
-    DEV_BUILD_LOG_PROGRAMFLOW(cudalog, "cuda-" << m_index << " CUDAMiner::~CUDAMiner() begin");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cuda-" << m_index << " CUDAMiner::~CUDAMiner() begin");
     stopWorking();
     kick_miner();
-    DEV_BUILD_LOG_PROGRAMFLOW(cudalog, "cuda-" << m_index << " CUDAMiner::~CUDAMiner() end");
+    DEV_BUILD_LOG_PROGRAMFLOW(cnote, "cuda-" << m_index << " CUDAMiner::~CUDAMiner() end");
 }
 
 bool CUDAMiner::initDevice()
 {
-    cudalog << "Using Pci Id : " << m_deviceDescriptor.uniqueId << " " << m_deviceDescriptor.cuName
-            << " (Compute " + m_deviceDescriptor.cuCompute + ") Memory : "
-            << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
+    cnote << m_deviceDescriptor.cuName << " · PCI " << m_deviceDescriptor.uniqueId << " · compute "
+          << m_deviceDescriptor.cuCompute << " · "
+          << dev::getFormattedMemory((double)m_deviceDescriptor.totalMemory);
 
     // Set Hardware Monitor Info
     m_hwmoninfo.deviceType = HwMonitorInfoType::NVIDIA;
@@ -85,9 +78,7 @@ bool CUDAMiner::initDevice()
     }
     catch (const cuda_runtime_error& ec)
     {
-        cudalog << "Could not set CUDA device on Pci Id " << m_deviceDescriptor.uniqueId
-                << " Error : " << ec.what();
-        cudalog << "Mining aborted on this device.";
+        cerror << "Can't use the GPU: " << ec.what();
         return false;
     }
     return true;
@@ -134,11 +125,10 @@ bool CUDAMiner::initEpoch_internal()
             {
                 if (freeMemory < RequiredDagMemory)
                 {
-                    cudalog << "Epoch " << m_epochContext.epochNumber << " requires "
-                            << dev::getFormattedMemory((double)RequiredDagMemory) << " memory. Only "
-                            << dev::getFormattedMemory((double)freeMemory)
-                            << " free on device.";
-                    cudalog << "This device hasn't enough memory available. Mining suspended ...";
+                    cwarn << "Epoch " << m_epochContext.epochNumber << " needs "
+                          << dev::getFormattedMemory((double)RequiredDagMemory) << ", only "
+                          << dev::getFormattedMemory((double)freeMemory)
+                          << " free: paused until the next epoch";
                     pause(MinerPauseEnum::PauseDueToInsufficientMemory);
                     return true;  // This will prevent to exit the thread and
                                   // Eventually resume mining when changing coin or epoch (NiceHash)
@@ -147,15 +137,15 @@ bool CUDAMiner::initEpoch_internal()
                     lightOnHost = true;
             }
 
-            cudalog << "Generating DAG + Light(on " << (lightOnHost ? "host" : "GPU")
-                    << ") : " << dev::getFormattedMemory((double)RequiredTotalMemory);
+            cdebug << "Building the DAG, light cache on the " << (lightOnHost ? "host" : "GPU")
+                   << ": " << dev::getFormattedMemory((double)RequiredTotalMemory);
 
             // create buffer for cache
             if (lightOnHost)
             {
                 CUDA_SAFE_CALL(cudaHostAlloc(reinterpret_cast<void**>(&light),
                     m_epochContext.lightSize, cudaHostAllocDefault));
-                cudalog << "WARNING: Generating DAG will take minutes, not seconds";
+                cwarn << "Not enough memory for the light cache: building the DAG takes minutes";
             }
             else
                 CUDA_SAFE_CALL(
@@ -175,8 +165,8 @@ bool CUDAMiner::initEpoch_internal()
         }
         else
         {
-            cudalog << "Generating DAG + Light (reusing buffers): "
-                    << dev::getFormattedMemory((double)RequiredTotalMemory);
+            cdebug << "Building the DAG in the same buffers: "
+                   << dev::getFormattedMemory((double)RequiredTotalMemory);
             get_constants(&dag, NULL, &light, NULL);
         }
 
@@ -189,23 +179,22 @@ bool CUDAMiner::initEpoch_internal()
         xhash_generate_dag(
             m_epochContext.dagSize, m_settings.gridSize, m_settings.blockSize, m_streams[0]);
 
-        cudalog << "Generated DAG + Light in "
-                << std::chrono::duration_cast<std::chrono::milliseconds>(
-                       std::chrono::steady_clock::now() - startInit)
-                       .count()
-                << " ms. "
-                << dev::getFormattedMemory(
-                       lightOnHost ? (double)(freeMemory - RequiredDagMemory) :
-                                     (double)(freeMemory - RequiredTotalMemory))
-                << " left.";
+        cnote << "DAG epoch " << m_epochContext.epochNumber << " ("
+              << dev::getFormattedMemory((double)m_epochContext.dagSize) << ") built in "
+              << std::chrono::duration_cast<std::chrono::milliseconds>(
+                     std::chrono::steady_clock::now() - startInit)
+                     .count()
+              << " ms · "
+              << dev::getFormattedMemory(lightOnHost ?
+                                             (double)(freeMemory - RequiredDagMemory) :
+                                             (double)(freeMemory - RequiredTotalMemory))
+              << " free";
 
         retVar = true;
     }
     catch (const cuda_runtime_error& ec)
     {
-        cudalog << "Unexpected error " << ec.what() << " on CUDA device "
-                << m_deviceDescriptor.uniqueId;
-        cudalog << "Mining suspended ...";
+        cerror << "Building the DAG failed: " << ec.what() << ", paused";
         // Start from a clean device on the next attempt
         m_allocated_memory_dag = 0;
         m_allocated_memory_light_cache = 0;
@@ -296,8 +285,8 @@ void CUDAMiner::workLoop()
             // Eventually start searching
             nextNonce = search(current.header.data(), upper64OfBoundary, nextNonce, w, exhausted);
             if (exhausted)
-                cudalog << "Nonce range of job " << current.header.abridged()
-                        << " exhausted. Waiting for new work ...";
+                cnote << "Searched all nonces of job " << current.header.abridged()
+                      << ", waiting for a new job";
         }
 
         // Reset miner and stop working
@@ -363,7 +352,7 @@ unsigned CUDAMiner::tuneKernel()
             best = v;
         ss << (v ? ", " : "") << names[v] << " " << dev::getFormattedHashes(rate) << "/s";
     }
-    cudalog << "Kernel tuning: " << ss.str() << ". Using " << names[best];
+    cnote << "Kernel " << names[best] << " (" << ss.str() << ")";
     return best;
 }
 
@@ -556,8 +545,7 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
 
                 Farm::f().submitProof(
                     Solution{nonce, mixes[r], w, std::chrono::steady_clock::now(), m_index});
-                cdebug << "cuda-" << m_index << " Job: " << w.header.abridged() << " Sol: 0x"
-                        << toHex(nonce) << EthReset;
+                cdebug << "Solution 0x" << toHex(nonce) << " of job " << w.header.abridged();
             }
         }
 
@@ -572,11 +560,11 @@ uint64_t CUDAMiner::search(uint8_t const* header, uint64_t target, uint64_t star
 #ifdef DEV_BUILD
     // Optionally log job switch time
     if (!shouldStop() && (g_logOptions & LOG_SWITCH))
-        cudalog << "Switch time: "
+        cnote << "Switch time: "
                 << std::chrono::duration_cast<std::chrono::milliseconds>(
                        std::chrono::steady_clock::now() - m_workSwitchStart)
                        .count()
-                << " ms.";
+                << " ms";
 #endif
 
     return start_nonce;

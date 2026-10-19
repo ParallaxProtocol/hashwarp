@@ -129,11 +129,11 @@ struct SolutionAccountType
     {
         string _ret = "A" + to_string(accepted);
         if (wasted)
-            _ret.append(":W" + to_string(wasted));
+            _ret.append(" W" + to_string(wasted));
         if (rejected)
-            _ret.append(":R" + to_string(rejected));
+            _ret.append(" R" + to_string(rejected));
         if (failed)
-            _ret.append(":F" + to_string(failed));
+            _ret.append(" F" + to_string(failed));
         return _ret;
     };
 };

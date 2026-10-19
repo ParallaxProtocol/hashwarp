@@ -1,3 +1,5 @@
+#define LOG_SOURCE "miner"
+
 #include <libdevcore/Log.h>
 #include <chrono>
 
@@ -34,10 +36,10 @@ void SimulateClient::connect()
 
 void SimulateClient::disconnect()
 {
-    cnote << "Simulation results : " << EthWhiteBold << "Max "
-          << dev::getFormattedHashes((double)hr_max, ScaleSuffix::Add, 6) << " Mean "
-          << dev::getFormattedHashes(hr_samples ? hr_sum / hr_samples : 0.0, ScaleSuffix::Add, 6)
-          << EthReset;
+    double mean = hr_samples ? hr_sum / hr_samples : 0.0;
+    cnote.with("event", "simulation").with("max", (double)hr_max).with("mean", mean)
+        << "Simulation · max " << dev::getFormattedHashes((double)hr_max) << "/s · mean "
+        << dev::getFormattedHashes(mean) << "/s";
     
     m_conn->addDuration(m_session->duration());
     m_session = nullptr;

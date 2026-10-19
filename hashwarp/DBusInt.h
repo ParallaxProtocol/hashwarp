@@ -13,15 +13,15 @@ public:
         conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
         if (!conn)
         {
-            minelog << "DBus error " << err.name << ": " << err.message;
+            cnote << "DBus error " << err.name << ": " << err.message;
         }
         dbus_bus_request_name(conn, "hashwarp.miner", DBUS_NAME_FLAG_REPLACE_EXISTING, &err);
         if (dbus_error_is_set(&err))
         {
-            minelog << "DBus error " << err.name << ": " << err.message;
+            cnote << "DBus error " << err.name << ": " << err.message;
             dbus_connection_close(conn);
         }
-        minelog << "DBus initialized!";
+        cnote << "DBus initialized!";
     }
 
     void send(const char* hash)
@@ -30,7 +30,7 @@ public:
         msg = dbus_message_new_signal("/hashwarp/miner/hash", "hashwarp.miner.monitor", "Hash");
         if (msg == nullptr)
         {
-            minelog << "Message is null!";
+            cnote << "Message is null!";
         }
         dbus_message_append_args(msg, DBUS_TYPE_STRING, &hash, DBUS_TYPE_INVALID);
         if (!dbus_connection_send(conn, msg, nullptr))

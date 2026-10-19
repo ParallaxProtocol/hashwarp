@@ -1,3 +1,5 @@
+#define LOG_SOURCE "api"
+
 #include "ApiServer.h"
 #include "HttpApi.h"
 
@@ -291,14 +293,13 @@ void ApiServer::start()
     }
     catch (const std::exception&)
     {
-        cwarn << "Could not start API server on port: " +
-                     to_string(m_acceptor.local_endpoint().port());
-        cwarn << "Ensure port is not in use by another service";
+        cwarn << "Can't listen on " << m_address << ":" << m_portnumber
+              << ", is another program using the port?";
         return;
     }
 
-    cnote << "Api server listening on port " + to_string(m_acceptor.local_endpoint().port())
-          << (m_password.empty() ? "." : ". Authentication needed.");
+    cnote << "Listening on " << m_address << ":" << m_acceptor.local_endpoint().port()
+          << (m_password.empty() ? "" : " · password required");
     m_running.store(true, std::memory_order_relaxed);
     m_workThread = std::thread{boost::bind(&ApiServer::begin_accept, this)};
 }
@@ -350,7 +351,7 @@ void ApiServer::handle_accept(std::shared_ptr<ApiConnection> session, boost::sys
             }
         });
         m_sessions.push_back(session);
-        cnote << "New API session from " << session->socket().remote_endpoint();
+        cdebug << "Connection from " << session->socket().remote_endpoint();
         session->start();
     }
     else
@@ -479,7 +480,7 @@ void ApiConnection::processRequest(Json::Value& jRequest, Json::Value& jResponse
     }
 
     assert(m_is_authenticated);
-    cnote << "API : Method " << _method << " requested";
+    cdebug << "Method " << _method;
     if (_method == "miner_getstat1")
     {
         jResponse["result"] = getMinerStat1();
@@ -766,7 +767,7 @@ void ApiConnection::processRequest(Json::Value& jRequest, Json::Value& jResponse
                 "Verbosity out of bounds (0-" + to_string(LOG_NEXT - 1) + ")";
             return;
         }
-        cnote << "Setting verbosity level to " << verbosity;
+        cnote << "Debug categories set to " << verbosity;
         g_logOptions = verbosity;
         jResponse["result"] = true;
     }
@@ -875,7 +876,7 @@ void ApiConnection::onRecvSocketDataCompleted(
                             jRes["error"]["errorcode"] = "-32700";
                             string what = jRdr.getFormattedErrorMessages();
                             boost::replace_all(what, "\n", " ");
-                            cwarn << "API : Got invalid Json message " << what;
+                            cwarn << "Invalid JSON: " << what;
                             jRes["error"]["message"] = "Json parse error : " + what;
                         }
 
@@ -1171,17 +1172,17 @@ std::string ApiConnection::control(const Json::Value& _body)
     {
         for (auto& m : miners)
             m->pause(MinerPauseEnum::PauseDueToAPIRequest);
-        cnote << "API: paused " << (_body.isMember("gpu") ? "GPU " + _body["gpu"].asString() : "all GPUs");
+        cnote << "Paused " << (_body.isMember("gpu") ? "gpu" + _body["gpu"].asString() : "all GPUs");
     }
     else if (action == "resume")
     {
         for (auto& m : miners)
             m->resume(MinerPauseEnum::PauseDueToAPIRequest);
-        cnote << "API: resumed " << (_body.isMember("gpu") ? "GPU " + _body["gpu"].asString() : "all GPUs");
+        cnote << "Resumed " << (_body.isMember("gpu") ? "gpu" + _body["gpu"].asString() : "all GPUs");
     }
     else if (action == "restart")
     {
-        cnote << "API: restarting the miners";
+        cnote << "Restarting the GPUs";
         Farm::f().restart_async();
     }
     else

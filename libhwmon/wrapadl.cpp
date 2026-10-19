@@ -1,3 +1,5 @@
+#define LOG_SOURCE "hwmon"
+
 /*
  * Wrapper for ADL, inspired by wrapnvml from John E. Stone
  *
@@ -51,8 +53,7 @@ wrap_adl_handle* wrap_adl_create()
     void* adl_dll = wrap_dlopen(tmp);
     if (adl_dll == nullptr)
     {
-        cwarn << "Failed to obtain all required ADL function pointers";
-        cwarn << "AMD hardware monitoring disabled";
+        cwarn << "ADL lacks functions hashwarp needs: no AMD sensors";
         return nullptr;
     }
 
@@ -94,8 +95,7 @@ wrap_adl_handle* wrap_adl_create()
         adlh->adl2MainControlCreate == nullptr || adlh->adl2MainControlRefresh == nullptr ||
         adlh->adl2MainControlDestroy == nullptr || adlh->adl2Overdrive6CurrentPowerGet == nullptr)
     {
-        cwarn << "Failed to obtain all required ADL function pointers";
-        cwarn << "AMD hardware monitoring disabled";
+        cwarn << "ADL lacks functions hashwarp needs: no AMD sensors";
 
         wrap_dlclose(adlh->adl_dll);
         free(adlh);
@@ -128,8 +128,7 @@ wrap_adl_handle* wrap_adl_create()
         int res = adlh->adlAdapterAdapterInfoGet(adlh->devs, sizeof(AdapterInfo) * logicalGpuCount);
         if (res != WRAPADL_OK)
         {
-            cwarn << "Failed to obtain using adlAdapterAdapterInfoGet().";
-            cwarn << "AMD hardware monitoring disabled";
+            cwarn << "ADL can't list the GPUs: no AMD sensors";
 
             wrap_dlclose(adlh->adl_dll);
             free(adlh);

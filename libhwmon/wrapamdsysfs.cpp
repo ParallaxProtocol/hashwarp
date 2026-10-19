@@ -1,3 +1,5 @@
+#define LOG_SOURCE "hwmon"
+
 /*
  * Wrapper for AMD SysFS on linux, using adapted code from amdcovc by matszpk
  *
@@ -162,8 +164,7 @@ wrap_amdsysfs_handle* wrap_amdsysfs_create()
     // Nothing collected - exit
     if (!devices.size())
     {
-        cwarn << "Failed to obtain all required AMD file pointers";
-        cwarn << "AMD hardware monitoring disabled";
+        cwarn << "No amdgpu sysfs files: no AMD sensors";
         return nullptr;
     }
 
@@ -171,8 +172,7 @@ wrap_amdsysfs_handle* wrap_amdsysfs_create()
     sysfsh = (wrap_amdsysfs_handle*)calloc(1, sizeof(wrap_amdsysfs_handle));
     if (sysfsh == nullptr)
     {
-        cwarn << "Failed allocate memory";
-        cwarn << "AMD hardware monitoring disabled";
+        cwarn << "Out of memory: no AMD sensors";
         return sysfsh;
     }
     sysfsh->sysfs_gpucount = gpucount;
@@ -348,7 +348,7 @@ int wrap_amdsysfs_get_power_usage(wrap_amdsysfs_handle* sysfsh, int index, unsig
     }
     catch (const std::exception& ex)
     {
-        cwarn << "Error in amdsysfs_get_power_usage: " << ex.what();
+        cwarn << "Can't read the power usage: " << ex.what();
     }
     return -1;
 }

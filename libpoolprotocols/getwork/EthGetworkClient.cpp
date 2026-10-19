@@ -1,3 +1,5 @@
+#define LOG_SOURCE "node"
+
 #include "EthGetworkClient.h"
 
 #include <chrono>
@@ -107,7 +109,7 @@ void EthGetworkClient::begin_connect()
     }
     else
     {
-        cwarn << "No more IP addresses to try for host: " << m_conn->Host();
+        cwarn << "No more addresses to try for " << m_conn->Host();
         disconnect();
     }
 }
@@ -188,8 +190,8 @@ void EthGetworkClient::handle_connect(const boost::system::error_code& ec)
         {
             // This endpoint does not respond
             // Pop it and retry
-            cwarn << "Error connecting to " << m_conn->Host() << ":" << toString(m_conn->Port())
-                  << " : " << ec.message();
+            cwarn << "Can't connect to " << m_conn->Host() << ":" << toString(m_conn->Port())
+                  << ": " << ec.message();
             m_endpoints.pop();
             begin_connect();
         }
@@ -210,8 +212,8 @@ void EthGetworkClient::handle_write(const boost::system::error_code& ec)
     {
         if (ec != boost::asio::error::operation_aborted)
         {
-            cwarn << "Error writing to " << m_conn->Host() << ":" << toString(m_conn->Port())
-                  << " : " << ec.message();
+            cwarn << "Write to " << m_conn->Host() << ":" << toString(m_conn->Port())
+                  << " failed: " << ec.message();
             m_endpoints.pop();
             begin_connect();
         }
@@ -315,7 +317,7 @@ void EthGetworkClient::handle_read(
                 {
                     string what = jRdr.getFormattedErrorMessages();
                     boost::replace_all(what, "\n", " ");
-                    cwarn << "Got invalid Json message : " << what;
+                    cwarn << "Invalid JSON from the node: " << what;
                 }
 
             }
@@ -339,9 +341,8 @@ void EthGetworkClient::handle_read(
     {
         if (ec != boost::asio::error::operation_aborted)
         {
-            cwarn << "Error reading from :" << m_conn->Host() << ":" << toString(m_conn->Port())
-                  << " : "
-                  << ec.message();
+            cwarn << "Read from " << m_conn->Host() << ":" << toString(m_conn->Port())
+                  << " failed: " << ec.message();
             disconnect();
         }
        
@@ -365,7 +366,7 @@ void EthGetworkClient::handle_resolve(
     }
     else
     {
-        cwarn << "Could not resolve host " << m_conn->Host() << ", " << ec.message();
+        cwarn << "Can't resolve " << m_conn->Host() << ": " << ec.message();
         disconnect();
     }
 }
@@ -378,7 +379,7 @@ void EthGetworkClient::processResponse(Json::Value& JRes)
 
     if (!JRes.isMember("id"))
     {
-        cwarn << "Missing id member in response from " << m_conn->Host() << ":"
+        cwarn << "Response without id from " << m_conn->Host() << ":"
               << toString(m_conn->Port());
         return;
     }
@@ -403,7 +404,7 @@ void EthGetworkClient::processResponse(Json::Value& JRes)
         // with a delay of m_farmRecheckPeriod ms.
         if (!_isSuccess)
         {
-            cwarn << "Got " << _errReason << " from " << m_conn->Host() << ":"
+            cwarn << "Error \"" << _errReason << "\" from " << m_conn->Host() << ":"
                   << toString(m_conn->Port());
             m_getwork_timer.expires_from_now(boost::posix_time::seconds(30));
             m_getwork_timer.async_wait(
@@ -414,7 +415,7 @@ void EthGetworkClient::processResponse(Json::Value& JRes)
         {
             if (!JRes.isMember("result"))
             {
-                cwarn << "Missing data for eth_getWork request from " << m_conn->Host() << ":"
+                cwarn << "Incomplete eth_getWork response from " << m_conn->Host() << ":"
                       << toString(m_conn->Port());
             }
             else
@@ -583,7 +584,7 @@ void EthGetworkClient::getwork_timer_elapsed(const boost::system::error_code& ec
             std::chrono::steady_clock::now() - m_current_tstamp);
         if (_delay.count() > m_worktimeout)
         {
-            cwarn << "No new work received in " << m_worktimeout << " seconds.";
+            cwarn << "No new job from the node in " << m_worktimeout << " s";
             m_endpoints.pop();
             disconnect();
         }

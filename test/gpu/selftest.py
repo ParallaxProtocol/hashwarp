@@ -77,10 +77,10 @@ def main():
     mockout = mocklog.read()
 
     out = ANSI.sub("", out)
-    accepted = len(re.findall(r"Accepted(?: \(stale\))? GPU\d+|BLOCK FOUND by GPU\d+", out))
-    rejected = len(re.findall(r"Rejected GPU\d+", out))
-    incorrect = len(re.findall(r"gave incorrect result", out))
-    epoch = re.search(r"Epoch : (\d+)", out)
+    accepted = len(re.findall(r"accepted(?: \(stale\))? gpu\d+|BLOCK FOUND by gpu\d+", out))
+    rejected = len(re.findall(r"rejected gpu\d+", out))
+    incorrect = len(re.findall(r"Wrong result", out))
+    epoch = re.search(r"Epoch (\d+) ", out)
 
     print("epoch %s, accepted %d, rejected %d, incorrect %d" %
           (epoch.group(1) if epoch else "?", accepted, rejected, incorrect))
@@ -90,12 +90,12 @@ def main():
         ok = False
 
     if args.protocol == "stratum":
-        rates = [float(r) for r in re.findall(r" ([\d.]+) Mh/s \(60s", out)]
+        rates = [float(r) for r in re.findall(r"([\d.]+) MH/s (?:·|\|) 60s", out)]
         rates = [r for r in rates if r > 0]
         if rates:
             mined_seconds = args.seconds - 10  # roughly: startup and DAG generation
             expected = sum(rates) / len(rates) * 1e6 * mined_seconds / (DIFFICULTY * 2**32)
-            print("shares %d, expected about %.0f at %.2f Mh" %
+            print("shares %d, expected about %.0f at %.2f MH/s" %
                   (accepted, expected, sum(rates) / len(rates)))
             if not expected / 3 <= accepted <= expected * 3:
                 print("share rate does not match the pool difficulty")

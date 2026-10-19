@@ -348,7 +348,8 @@ void Farm::restoreOc()
         if (oc.second->changed())
         {
             oc.second->restore();
-            cnote << "Restored the clocks, power limit and fans of " << oc.first;
+            clogs(dev::NoteChannel, "oc")
+                << "Restored the clocks, power limit and fans of " << oc.first;
         }
 }
 
@@ -440,8 +441,8 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
 
     if (m_Settings.shutdownTemp && hottest >= (int)m_Settings.shutdownTemp)
     {
-        cerror << "GPU " << _minerIdx << " reached " << hottest << "C (--shutdown-temp "
-               << m_Settings.shutdownTemp << "). Stopping hashwarp";
+        cgpuerror(_minerIdx) << "Reached " << hottest << "°C (--shutdown-temp "
+                             << m_Settings.shutdownTemp << "), stopping hashwarp";
         g_exitCode = EXIT_CODE_SHUTDOWN_TEMP;
         raise(SIGTERM);
         return;
@@ -460,19 +461,19 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
     if (!paused && (coreHot || memHot))
     {
         if (coreHot)
-            cwarn << "GPU " << _minerIdx << " reached " << _sensors.tempC << "C, pausing until "
-                  << tempResume << "C";
+            cgpuwarn(_minerIdx) << "Reached " << _sensors.tempC << "°C, pausing until "
+                                << tempResume << "°C";
         else
-            cwarn << "GPU " << _minerIdx << " memory reached " << memTemp << "C, pausing until "
-                  << memResume << "C";
+            cgpuwarn(_minerIdx) << "Memory reached " << memTemp << "°C, pausing until "
+                                << memResume << "°C";
         _miner.pause(MinerPauseEnum::PauseDueToOverHeating);
         return;
     }
     if (memStop && !memTemp && !m_memTempWarned.count(_minerIdx))
     {
         m_memTempWarned.insert(_minerIdx);
-        cwarn << "GPU " << _minerIdx
-              << " reports no memory or hotspot temperature: --mem-temp-stop has no effect";
+        cgpuwarn(_minerIdx)
+            << "No memory or hotspot temperature: --mem-temp-stop has no effect";
     }
 
     // A failed sensor read (0) never counts as cooled down
@@ -482,8 +483,8 @@ void Farm::checkTemperatures(Miner& _miner, int _minerIdx, const HwSensorsType& 
         bool memCool = !memStop || !memTemp || memTemp <= (int)memResume;
         if (coreCool && memCool)
         {
-            cnote << "GPU " << _minerIdx << " cooled down to " << _sensors.tempC << "C"
-                  << (memTemp ? " (memory " + std::to_string(memTemp) + "C)" : "")
+            cgpunote(_minerIdx) << "Cooled down to " << _sensors.tempC << "°C"
+                                << (memTemp ? " (memory " + std::to_string(memTemp) + "°C)" : "")
                   << ", resuming";
             _miner.resume(MinerPauseEnum::PauseDueToOverHeating);
         }
@@ -508,8 +509,8 @@ void Farm::restartFailedMiner(
         // Leave this GPU stopped, the others keep mining
         r.givenUp = true;
         _miner.pause(MinerPauseEnum::PauseDueToFailure);
-        cerror << "GPU " << _minerIdx << " failed " << r.times.size() + 1
-               << " times in the last hour (" << reason << "). Leaving it stopped";
+        cgpuerror(_minerIdx) << "Failed " << r.times.size() + 1 << " times in the last hour ("
+                             << reason << "), leaving it stopped";
 
         bool anyMining = false;
         for (auto const& miner : m_miners)
@@ -522,8 +523,8 @@ void Farm::restartFailedMiner(
     // Wait 5, 10, 20 ... (up to 300) seconds before the following restart
     r.times.push_back(_now);
     r.next = _now + std::chrono::seconds(std::min(300, 5 << std::min<int>(r.times.size(), 6)));
-    cwarn << "GPU " << _minerIdx << " stopped (" << reason << "). Restarting it ("
-          << r.times.size() << "/" << m_Settings.watchdogRestarts << " in the last hour)";
+    cgpuwarn(_minerIdx) << "Stopped (" << reason << "), restarting it (" << r.times.size()
+                        << "/" << m_Settings.watchdogRestarts << " in the last hour)";
     _miner.heartbeat();
     _miner.startWorking();
 }
@@ -540,7 +541,7 @@ void Farm::hangWatchdogLoop()
             std::chrono::steady_clock::duration(m_lastCollect.load()));
         if (now - lastCollect > timeout + std::chrono::seconds(10))
         {
-            cerror << "Hashwarp's event loop is stuck since "
+            cerror << "The event loop is stuck since "
                    << std::chrono::duration_cast<std::chrono::seconds>(now - lastCollect).count()
                    << " seconds (GPU driver hang)";
             watchdogGiveUp(-1, "hung", true);
@@ -557,8 +558,8 @@ void Farm::hangWatchdogLoop()
         {
             if (!miner->isStopped() && miner->unresponsive(timeout))
             {
-                cerror << "GPU " << miner->Index() << " gave no sign of life for "
-                       << m_Settings.watchdogTimeout << " seconds (GPU or driver hang)";
+                cgpuerror(miner->Index()) << "No sign of life for " << m_Settings.watchdogTimeout
+                                          << " s (GPU or driver hang)";
                 watchdogGiveUp(miner->Index(), "hung", true);
             }
         }
@@ -869,8 +870,7 @@ void Farm::submitProofAsync(Solution const& _s)
         if (r.value > _s.work.boundary)
         {
             accountSolution(_s.midx, SolutionAccountingEnum::Failed);
-            cwarn << "GPU " << _s.midx
-                  << " gave incorrect result. Lower overclocking values if it happens frequently.";
+            cgpuwarn(_s.midx) << "Wrong result, lower the overclock if it happens often";
             return;
         }
         m_onSolutionFound(Solution{_s.nonce, r.mixHash, _s.work, _s.tstamp, _s.midx});

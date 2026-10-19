@@ -1,3 +1,5 @@
+#define LOG_SOURCE "pool"
+
 #include <hashwarp/buildinfo.h>
 #include <libdevcore/Log.h>
 #include <xhash/xhash.hpp>
@@ -115,10 +117,10 @@ void EthStratumClient::init_socket()
         }
         if (!loaded)
         {
-            cwarn << "Failed to load the CA certificates from "
+            cwarn << "Can't load the CA certificates from "
                   << (certPath ? certPath : "the usual locations")
-                  << ", set SSL_CERT_FILE to the CA bundle file.";
-            cwarn << "It is possible that certificate verification can fail.";
+                  << ", TLS certificate checks will likely fail. Set SSL_CERT_FILE to the CA "
+                     "bundle";
         }
 #endif
     }
@@ -237,7 +239,7 @@ void EthStratumClient::disconnect()
         }
         catch (std::exception const& _e)
         {
-            cwarn << "Error while disconnecting:" << _e.what();
+            cwarn << "Error while disconnecting: " << _e.what();
         }
     }
 
@@ -328,7 +330,7 @@ void EthStratumClient::resolve_handler(
     }
     else
     {
-        cwarn << "Could not resolve host " << m_conn->Host() << ", " << ec.message();
+        cwarn << "Can't resolve " << m_conn->Host() << ": " << ec.message();
 
         // Release locking flag and set connection status
         m_connecting.store(false, std::memory_order_relaxed);
@@ -356,7 +358,7 @@ void EthStratumClient::start_connect()
 
 #ifdef DEV_BUILD
         if (g_logOptions & LOG_CONNECT)
-            cdebug << ("Trying " + toString(m_endpoint) + " ...");
+            cdebug << "Trying " << toString(m_endpoint);
 #endif
 
         clear_response_pleas();
@@ -379,7 +381,7 @@ void EthStratumClient::start_connect()
     else
     {
         m_connecting.store(false, std::memory_order_relaxed);
-        cwarn << "No more IP addresses to try for host: " << m_conn->Host();
+        cwarn << "No more addresses to try for " << m_conn->Host();
 
         // We "simulate" a disconnect, to ensure a fully shutdown state
         disconnect_finalize();
@@ -470,7 +472,7 @@ void EthStratumClient::workloop_timer_elapsed(const boost::system::error_code& e
                 else
                 {
                     // Waiting for a response to solution submission
-                    cwarn << "No response received in " << m_responsetimeout << " seconds.";
+                    cwarn << "No response from the pool in " << m_responsetimeout << " s";
                     m_endpoints.pop();
                     clear_response_pleas();
                     m_io_service.post(
@@ -482,7 +484,7 @@ void EthStratumClient::workloop_timer_elapsed(const boost::system::error_code& e
                      (duration_cast<seconds>(steady_clock::now() - m_current_timestamp).count() >
                          m_worktimeout))
             {
-                cwarn << "No new work received in " << m_worktimeout << " seconds.";
+                cwarn << "No new job from the pool in " << m_worktimeout << " s";
                 m_endpoints.pop();
                 clear_response_pleas();
                 m_io_service.post(
@@ -508,8 +510,8 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
     // Timeout has run before or we got error
     if (ec || !m_socket->is_open())
     {
-        cwarn << ("Error  " + toString(m_endpoint) + " [ " + (ec ? ec.message() : "Timeout") +
-                  " ]");
+        cwarn << "Can't connect to " << toString(m_endpoint) << ": "
+              << (ec ? ec.message() : "timeout");
 
         // We need to close the socket used in the previous connection attempt
         // before starting a new one.
@@ -558,31 +560,19 @@ void EthStratumClient::connect_handler(const boost::system::error_code& ec)
 
         if (hec)
         {
-            cwarn << "SSL/TLS Handshake failed: " << hec.message();
+            cwarn << "TLS handshake with " << m_conn->Host() << " failed: " << hec.message();
             if (hec.category() == boost::asio::error::get_ssl_category() &&
                 ERR_GET_REASON(hec.value()) == SSL_R_CERTIFICATE_VERIFY_FAILED)
             {  // certificate verification failed
-                cwarn << "This can have multiple reasons:";
-                cwarn << "* Root certs are either not installed or not found";
-                cwarn << "* Pool uses a self-signed certificate";
-                cwarn << "* Pool hostname you're connecting to does not match the CN registered "
-                         "for the certificate.";
-                cwarn << "Possible fixes:";
+                cwarn << "The pool's certificate can't be verified. The CA certificates may be "
+                         "missing, the pool may use a self-signed certificate, or the host name "
+                         "doesn't match the certificate's";
 #ifndef _WIN32
-                cwarn << "* Make sure the file '/etc/ssl/certs/ca-certificates.crt' exists and "
-                         "is accessible";
-                cwarn << "* Export the correct path via 'export "
-                         "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt' to the correct "
-                         "file";
-                cwarn << "  On most systems you can install the 'ca-certificates' package";
-                cwarn << "  You can also get the latest file here: "
-                         "https://curl.haxx.se/docs/caextract.html";
+                cwarn << "Install the ca-certificates package, or set SSL_CERT_FILE to a CA "
+                         "bundle (https://curl.se/docs/caextract.html)";
 #endif
-                cwarn << "* Double check hostname in the -P argument.";
-                cwarn << "* Disable certificate verification all-together via environment "
-                         "variable. See hashwarp --help for info about environment variables";
-                cwarn << "If you do the latter please be advised you might expose yourself to the "
-                         "risk of seeing your shares stolen";
+                cwarn << "Check the host name in -P. SSL_NOVERIFY=1 skips the check, but then "
+                         "anyone between you and the pool can steal your shares";
             }
 
             // This is a fatal error
@@ -743,6 +733,20 @@ std::string EthStratumClient::processError(Json::Value& responseObject)
     return retVar;
 }
 
+void EthStratumClient::negotiationFailed()
+{
+    static const char* const names[] = {
+        "Stratum", "Eth-Proxy", "EthereumStratum/1.0.0", "EthereumStratum/2.0.0"};
+    unsigned mode = m_conn->StratumMode();
+    const char* name = mode <= ETHEREUMSTRATUM2 ? names[mode] : names[STRATUM];
+    if (m_conn->StratumModeConfirmed())
+        cwarn << "The pool doesn't speak " << name << ", check the scheme of the pool URL";
+    else if (mode == STRATUM)
+        cwarn << "The pool doesn't speak any protocol hashwarp knows";
+    else
+        cnote << "The pool doesn't speak " << name << ", trying the next protocol";
+}
+
 void EthStratumClient::processExtranonce(std::string& enonce)
 {
     // The extranonce is the leading part of the 64 bit nonce (16 hex chars):
@@ -750,13 +754,13 @@ void EthStratumClient::processExtranonce(std::string& enonce)
     if (enonce.length() >= 16 ||
         enonce.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
     {
-        cwarn << "Pool sent an invalid extranonce " << enonce << ". Disconnecting ...";
+        cwarn << "The pool sent an invalid extranonce " << enonce << ", disconnecting";
         m_conn->MarkUnrecoverable();
         m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         return;
     }
     m_session->extraNonceSizeBytes = enonce.length();
-    cnote << "Extranonce set to " EthWhite << enonce << EthReset;
+    cdebug << "Extranonce " << enonce;
     enonce.resize(16, '0');
     m_session->extraNonce = std::stoull(enonce, nullptr, 16);
 }
@@ -801,10 +805,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                              responseObject.get("jsonrpc", "") != "2.0")) ||
         (_isNotification && (responseObject["params"].empty() && responseObject["result"].empty())))
     {
-        cwarn << "Pool sent an invalid jsonrpc message...";
-        cwarn << "Do not blame hashwarp for this. Ask pool devs to honor http://www.jsonrpc.org/ "
-                 "specifications ";
-        cwarn << "Disconnecting...";
+        cwarn << "The pool sent an invalid JSON-RPC message, disconnecting";
         m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         return;
     }
@@ -837,24 +838,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             if (!_isSuccess && !m_conn->StratumModeConfirmed())
             {
                 // Disconnect and Proceed with next step of autodetection
-                switch (m_conn->StratumMode())
-                {
-                case ETHEREUMSTRATUM2:
-                    cnote << "Negotiation of EthereumStratum/2.0.0 failed. Trying another ...";
-                    break;
-                case ETHEREUMSTRATUM:
-                    cnote << "Negotiation of EthereumStratum/1.0.0 failed. Trying another ...";
-                    break;
-                case ETHPROXY:
-                    cnote << "Negotiation of Eth-Proxy compatible failed. Trying another ...";
-                    break;
-                case STRATUM:
-                    cnote << "Negotiation of Stratum failed.";
-                    break;
-                default:
-                    // Should not happen
-                    break;
-                }
+                negotiationFailed();
 
                 m_io_service.post(
                     m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -884,7 +868,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 {
                     // Selected flavour is confirmed
                     m_conn->SetStratumMode(3, true);
-                    cnote << "Stratum mode : EthereumStratum/2.0.0";
+                    cnote << "Protocol EthereumStratum/2.0.0";
                     startSession();
 
                     // Send request for subscription
@@ -897,15 +881,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                     // If no autodetection the connection is not usable
                     // with this stratum flavor
                     if (m_conn->StratumModeConfirmed())
-                    {
                         m_conn->MarkUnrecoverable();
-                        cnote << "Negotiation of EthereumStratum/2.0.0 failed. Change your "
-                                 "connection parameters";
-                    }
-                    else
-                    {
-                        cnote << "Negotiation of EthereumStratum/2.0.0 failed. Trying another ...";
-                    }
+                    negotiationFailed();
                     // Disconnect
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -923,7 +900,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 {
                     // Selected flavour is confirmed
                     m_conn->SetStratumMode(2, true);
-                    cnote << "Stratum mode : EthereumStratum/1.0.0 (NiceHash)";
+                    cnote << "Protocol EthereumStratum/1.0.0";
                     startSession();
                     m_session->subscribed.store(true, memory_order_relaxed);
                   
@@ -950,17 +927,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                     // If no autodetection the connection is not usable
                     // with this stratum flavor
                     if (m_conn->StratumModeConfirmed())
-                    {
                         m_conn->MarkUnrecoverable();
-                        cnote << "Negotiation of EthereumStratum/1.0.0 (NiceHash) failed. Change "
-                                 "your "
-                                 "connection parameters";
-                    }
-                    else
-                    {
-                        cnote << "Negotiation of EthereumStratum/1.0.0 (NiceHash) failed. Trying "
-                                 "another ...";
-                    }
+                    negotiationFailed();
                     // Disconnect
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -975,7 +943,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 {
                     // Selected flavour is confirmed
                     m_conn->SetStratumMode(1, true);
-                    cnote << "Stratum mode : Eth-Proxy compatible";
+                    cnote << "Protocol Eth-Proxy";
                     startSession();
 
                     m_session->subscribed.store(true, std::memory_order_relaxed);
@@ -991,16 +959,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                     // If no autodetection the connection is not usable
                     // with this stratum flavor
                     if (m_conn->StratumModeConfirmed())
-                    {
                         m_conn->MarkUnrecoverable();
-                        cnote << "Negotiation of Eth-Proxy compatible failed. Change your "
-                                 "connection parameters";
-                    }
-                    else
-                    {
-                        cnote << "Negotiation of Eth-Proxy compatible failed. Trying "
-                                 "another ...";
-                    }
+                    negotiationFailed();
                     // Disconnect
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1015,7 +975,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 {
                     // Selected flavour is confirmed
                     m_conn->SetStratumMode(0, true);
-                    cnote << "Stratum mode : Stratum";
+                    cnote << "Protocol Stratum";
                     startSession();
                     m_session->subscribed.store(true, memory_order_relaxed);
 
@@ -1034,16 +994,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                     // If no autodetection the connection is not usable
                     // with this stratum flavor
                     if (m_conn->StratumModeConfirmed())
-                    {
                         m_conn->MarkUnrecoverable();
-                        cnote << "Negotiation of Eth-Proxy compatible failed. Change your "
-                                 "connection parameters";
-                    }
-                    else
-                    {
-                        cnote << "Negotiation of Eth-Proxy compatible failed. Trying "
-                                 "another ...";
-                    }
+                    negotiationFailed();
                     // Disconnect
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1083,7 +1035,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 if (!jResult.isString() || !jResult.asString().size())
                 {
                     // Got invalid session id which is mandatory
-                    cwarn << "Got invalid or missing session id. Disconnecting ... ";
+                    cwarn << "The pool sent an invalid or no session id, disconnecting";
                     m_conn->MarkUnrecoverable();
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1128,8 +1080,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
 
             if (!isAuthorized())
             {
-                cnote << "Worker " << EthWhite << m_conn->UserDotWorker() << EthReset
-                      << " not authorized : " << _errReason;
+                cerror << "Worker " << m_conn->UserDotWorker() << " not authorized"
+                       << (_errReason.empty() ? "" : ": " + _errReason);
                 m_conn->MarkUnrecoverable();
                 m_io_service.post(
                     m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1137,7 +1089,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             }
             else
             {
-                cnote << "Authorized worker " << m_conn->UserDotWorker();
+                cnote << "Authorized as " << m_conn->UserDotWorker();
             }
         }
 
@@ -1148,8 +1100,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             if (!_isSuccess || (!jResult.isString() || !jResult.asString().size()))
             {
                 // Got invalid session id which is mandatory
-                cnote << "Worker " << EthWhite << m_conn->UserDotWorker() << EthReset
-                      << " not authorized : " << _errReason;
+                cerror << "Worker " << m_conn->UserDotWorker() << " not authorized"
+                       << (_errReason.empty() ? "" : ": " + _errReason);
                 m_conn->MarkUnrecoverable();
                 m_io_service.post(
                     m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1158,7 +1110,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             m_authpending.store(false, memory_order_relaxed);
             m_session->authorized.store(true, memory_order_relaxed);
             m_session->workerId = jResult.asString();
-            cnote << "Authorized worker " << m_conn->UserDotWorker();
+            cnote << "Authorized as " << m_conn->UserDotWorker();
 
             // Nothing else to here. Wait for notifications from pool
         }
@@ -1240,8 +1192,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             // Hashrate submit is actually out of stratum spec
             if (!_isSuccess)
             {
-                cwarn << "Submit hashRate failed : "
-                      << (_errReason.empty() ? "Unspecified error" : _errReason);
+                cdebug << "The pool refused the hashrate report"
+                       << (_errReason.empty() ? "" : ": " + _errReason);
             }
         }
 
@@ -1255,24 +1207,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             if (!_isSuccess && !m_conn->StratumModeConfirmed())
             {
                 // Disconnect and Proceed with next step of autodetection
-                switch (m_conn->StratumMode())
-                {
-                case ETHEREUMSTRATUM2:
-                    cnote << "Negotiation of EthereumStratum/2.0.0 failed. Trying another ...";
-                    break;
-                case ETHEREUMSTRATUM:
-                    cnote << "Negotiation of EthereumStratum/1.0.0 failed. Trying another ...";
-                    break;
-                case ETHPROXY:
-                    cnote << "Negotiation of Eth-Proxy compatible failed. Trying another ...";
-                    break;
-                case STRATUM:
-                    cnote << "Negotiation of Stratum failed.";
-                    break;
-                default:
-                    // Should not happen
-                    break;
-                }
+                negotiationFailed();
 
                 m_io_service.post(
                     m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
@@ -1284,8 +1219,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 if (!isSubscribed())
                 {
                     // Subscription pending
-                    cnote << "Subscription failed : "
-                          << (_errReason.empty() ? "Unspecified error" : _errReason);
+                    cwarn << "Subscription failed"
+                          << (_errReason.empty() ? "" : ": " + _errReason);
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
                     return;
@@ -1293,8 +1228,8 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
                 else if (isSubscribed() && !isAuthorized())
                 {
                     // Authorization pending
-                    cnote << "Worker not authorized : "
-                          << (_errReason.empty() ? "Unspecified error" : _errReason);
+                    cerror << "Worker " << m_conn->UserDotWorker() << " not authorized"
+                           << (_errReason.empty() ? "" : ": " + _errReason);
                     m_io_service.post(
                         m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
                     return;
@@ -1304,7 +1239,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
 
         else
         {
-            cnote << "Got response for unknown message id [" << _id << "] Discarding...";
+            cdebug << "Ignoring a response with unknown id " << _id;
             return;
         }
     }
@@ -1444,14 +1379,14 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             */
             if (!m_session || !m_session->firstMiningSet)
             {
-                cwarn << "Got mining.notify before mining.set message. Discarding ...";
+                cwarn << "Ignoring mining.notify before mining.set";
                 return;
             }
 
             if (!responseObject.isMember("params") || !responseObject["params"].isArray() ||
                 responseObject["params"].empty() || responseObject["params"].size() != 4)
             {
-                cwarn << "Got invalid mining.notify message. Discarding ...";
+                cwarn << "Ignoring an invalid mining.notify";
                 return;
             }
 
@@ -1490,7 +1425,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             }
             else
             {
-                cwarn << "Invalid mining.set_difficulty rpc method. Disconnecting ...";
+                cwarn << "Invalid mining.set_difficulty, disconnecting";
                 if (m_conn->StratumModeConfirmed())
                 {
                     m_conn->MarkUnrecoverable();
@@ -1525,7 +1460,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
             if (!responseObject.isMember("params") || !responseObject["params"].isObject() ||
                 responseObject["params"].empty())
             {
-                cwarn << "Got invalid mining.set message. Discarding ...";
+                cwarn << "Ignoring an invalid mining.set";
                 return;
             }
             m_session->firstMiningSet = true;
@@ -1553,7 +1488,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
         }
         else if (_method == "mining.bye" && m_conn->StratumMode() == ETHEREUMSTRATUM2)
         {
-            cnote << m_conn->Host() << " requested connection close. Disconnecting ...";
+            cnote << m_conn->Host() << " asked to reconnect";
             m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         }
         else if (_method == "client.get_version")
@@ -1574,7 +1509,7 @@ void EthStratumClient::processResponse(Json::Value& responseObject)
         }
         else
         {
-            cwarn << "Got unknown method [" << _method << "] from pool. Discarding...";
+            cdebug << "Ignoring unknown method " << _method;
 
             // Respond back to issuer
             if (_rpcVer == 2)
@@ -1636,7 +1571,7 @@ void EthStratumClient::submitSolution(const Solution& solution)
 {
     if (!isAuthorized())
     {
-        cwarn << "Solution not submitted. Not authorized.";
+        cwarn << "Solution not submitted: not authorized";
         return;
     }
 
@@ -1749,7 +1684,7 @@ void EthStratumClient::onRecvSocketDataCompleted(
         // misbehaving one grow the buffer without bound
         if (m_message.size() > 65536 && m_message.find("\n") == string::npos)
         {
-            cwarn << "Pool " << m_conn->Host() << " sent an oversized message. Disconnecting ...";
+            cwarn << m_conn->Host() << " sent an oversized message, disconnecting";
             m_message.clear();
             m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
             return;
@@ -1786,14 +1721,14 @@ void EthStratumClient::onRecvSocketDataCompleted(
                         }
                         catch (const std::exception& _ex)
                         {
-                            cwarn << "Stratum got invalid Json message : " << _ex.what();
+                            cwarn << "Invalid JSON from the pool: " << _ex.what();
                         }
                     }
                     else
                     {
                         string what = jRdr.getFormattedErrorMessages();
                         boost::replace_all(what, "\n", " ");
-                        cwarn << "Stratum got invalid Json message : " << what;
+                        cwarn << "Invalid JSON from the pool: " << what;
                     }
                 }
             }
@@ -1817,23 +1752,23 @@ void EthStratumClient::onRecvSocketDataCompleted(
         {
             if (m_authpending.load(std::memory_order_relaxed))
             {
-                cwarn << "Error while waiting for authorization from pool";
-                cwarn << "Double check your pool credentials.";
+                cwarn << "The pool closed the connection before authorizing, check the wallet "
+                         "and worker name";
                 m_conn->MarkUnrecoverable();
             }
 
             if ((ec.category() == boost::asio::error::get_ssl_category()) &&
                 (ERR_GET_REASON(ec.value()) == SSL_RECEIVED_SHUTDOWN))
             {
-                cnote << "SSL Stream remotely closed by " << m_conn->Host();
+                cnote << m_conn->Host() << " closed the connection";
             }
             else if (ec == boost::asio::error::eof)
             {
-                cnote << "Connection remotely closed by " << m_conn->Host();
+                cnote << m_conn->Host() << " closed the connection";
             }
             else
             {
-                cwarn << "Socket read failed: " << ec.message();
+                cwarn << "Read from " << m_conn->Host() << " failed: " << ec.message();
             }
             m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         }
@@ -1897,13 +1832,13 @@ void EthStratumClient::onSendSocketDataCompleted(const boost::system::error_code
         if ((ec.category() == boost::asio::error::get_ssl_category()) &&
             (SSL_R_PROTOCOL_IS_SHUTDOWN == ERR_GET_REASON(ec.value())))
         {
-            cnote << "SSL Stream error : " << ec.message();
+            cwarn << "TLS error: " << ec.message();
             m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         }
 
         if (isConnected())
         {
-            cwarn << "Socket write failed : " << ec.message();
+            cwarn << "Write to " << m_conn->Host() << " failed: " << ec.message();
             m_io_service.post(m_io_strand.wrap(boost::bind(&EthStratumClient::disconnect, this)));
         }
     }

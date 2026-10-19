@@ -30,11 +30,11 @@ struct Scale
 Scale scaleFor(double _hashrate)
 {
     static const Scale scales[] = {
-        {1e12, "Th/s"}, {1e9, "Gh/s"}, {1e6, "Mh/s"}, {1e3, "Kh/s"}, {1, "h/s"}};
+        {1e12, "TH/s"}, {1e9, "GH/s"}, {1e6, "MH/s"}, {1e3, "kH/s"}, {1, "H/s"}};
     for (const auto& s : scales)
         if (_hashrate >= s.divisor * 0.9995)
             return s;
-    return {1e6, "Mh/s"};
+    return {1e6, "MH/s"};
 }
 
 std::string fixed(double _v, int _precision = 2)
@@ -68,38 +68,105 @@ std::string shares(const SolutionAccountType& _s)
     return ret;
 }
 
+// Characters shown, of UTF-8 text without colors
+size_t width(const std::string& _s)
+{
+    size_t n = 0;
+    bool skip = false;
+    for (unsigned char c : _s)
+    {
+        if (c == '\x1b')
+            skip = true;
+        else if (skip)
+            skip = c != 'm';
+        else if ((c & 0xc0) != 0x80)
+            n++;
+    }
+    return n;
+}
+
 std::string pad(std::string _s, size_t _width, bool _left = false)
 {
-    if (_s.size() >= _width)
+    size_t w = width(_s);
+    if (w >= _width)
         return _s;
-    return _left ? _s + std::string(_width - _s.size(), ' ') :
-                   std::string(_width - _s.size(), ' ') + _s;
+    return _left ? _s + std::string(_width - w, ' ') : std::string(_width - w, ' ') + _s;
+}
+
+std::string sensors(const TelemetryAccountType& _m)
+{
+    std::string ret;
+    if (_m.sensors.tempC)
+        ret += " · " + std::to_string(_m.sensors.tempC) + "°C · fan " +
+               std::to_string(_m.sensors.fanP) + "%";
+    if (_m.sensors.powerW > 0)
+        ret += " · " + fixed(_m.sensors.powerW, 0) + " W";
+    if (_m.sensors.powerW > 0 && _m.hashrate > 0)
+        ret += " · " + fixed(_m.hashrate / 1e3 / _m.sensors.powerW, 0) + " kH/J";
+    return ret;
 }
 }  // namespace
 
-std::string summaryLine(const TelemetryType& _t, const PoolStatus& _pool)
+std::vector<ReportLine> reportLines(const TelemetryType& _t, const PoolStatus& _pool, bool _perGpu)
 {
+    std::vector<ReportLine> lines;
+    Scale sc = scaleFor(std::max<double>(_t.farm.hashrate, _t.farm.hashrate900));
+
+    ReportLine farm;
+    farm.source = "miner";
     std::ostringstream ss;
     if (!_pool.connected)
-        ss << EthRed "Not connected" EthReset " ";
-
-    Scale sc = scaleFor(std::max<double>(_t.farm.hashrate, _t.farm.hashrate900));
+        ss << EthRed "not connected" EthReset " · ";
     ss << EthTealBold << fixed(_t.farm.hashrate / sc.divisor) << " " << sc.unit << EthReset
-       << " (60s " << fixed(_t.farm.hashrate60 / sc.divisor) << ", 15m "
-       << fixed(_t.farm.hashrate900 / sc.divisor) << ")";
+       << " · 60s " << fixed(_t.farm.hashrate60 / sc.divisor) << " · 15m "
+       << fixed(_t.farm.hashrate900 / sc.divisor);
     if (_t.effectiveHashrate > 0)
-        ss << " eff " << fixed(_t.effectiveHashrate / sc.divisor);
-    ss << " " EthWhiteBold << shares(_t.farm.solutions) << EthReset;
+        ss << " · eff " << fixed(_t.effectiveHashrate / sc.divisor);
+    ss << " · " EthWhiteBold << shares(_t.farm.solutions) << EthReset;
+    farm.fields = {{"hashrate", _t.farm.hashrate}, {"hashrate60", _t.farm.hashrate60},
+        {"hashrate900", _t.farm.hashrate900}, {"accepted", _t.farm.solutions.accepted},
+        {"rejected", _t.farm.solutions.rejected}, {"failed", _t.farm.solutions.failed}};
+    if (_t.effectiveHashrate > 0)
+        farm.fields.push_back({"effective", _t.effectiveHashrate});
+
+    if (!_perGpu && _t.miners.size() == 1)
+    {
+        const auto& m = _t.miners[0];
+        if (m.paused)
+            ss << " · " EthYellow "paused" EthReset;
+        else if (_t.hwmon)
+            ss << sensors(m);
+        farm.text = ss.str();
+        lines.push_back(farm);
+        return lines;
+    }
+    farm.text = ss.str();
+    lines.push_back(farm);
+    if (!_perGpu)
+        return lines;
 
     for (size_t i = 0; i < _t.miners.size(); i++)
     {
         const auto& m = _t.miners[i];
-        ss << (i ? ", " : " - ") << m.prefix << i << " "
-           << (m.paused ? EthYellow "paused" EthReset : fixed(m.hashrate / sc.divisor));
-        if (_t.hwmon && m.sensors.tempC)
-            ss << " " << m.sensors.tempC << "C";
+        ReportLine gpu;
+        gpu.source = (m.prefix == "cp" ? "cpu" : "gpu") + std::to_string(i);
+        gpu.fields = {{"gpu", (double)i}, {"hashrate", m.hashrate}, {"paused", m.paused}};
+        if (m.paused)
+            gpu.text = EthYellow "paused" EthReset;
+        else
+        {
+            gpu.text = fixed(m.hashrate / sc.divisor) + " " + sc.unit;
+            if (_t.hwmon)
+            {
+                gpu.text += sensors(m);
+                gpu.fields.push_back({"temp", m.sensors.tempC});
+                gpu.fields.push_back({"fan", m.sensors.fanP});
+                gpu.fields.push_back({"power", m.sensors.powerW});
+            }
+        }
+        lines.push_back(gpu);
     }
-    return ss.str();
+    return lines;
 }
 
 std::vector<std::string> statsTable(
@@ -117,10 +184,10 @@ std::vector<std::string> statsTable(
         showMem = showMem || m.sensors.memTempC;
         showClocks = showClocks || m.sensors.coreMHz;
     }
-    auto temp = [](int _c) { return _c ? std::to_string(_c) + "C" : std::string("-"); };
+    auto temp = [](int _c) { return _c ? std::to_string(_c) + "°C" : std::string("-"); };
 
     std::ostringstream h;
-    h << EthWhiteBold << pad("GPU", 4, true) << pad("Name", 26, true) << pad(u, 10) << pad("60s", 9)
+    h << EthWhiteBold << pad("GPU", 6, true) << pad("Name", 26, true) << pad(u, 10) << pad("60s", 9)
       << pad("15m", 9) << pad("Shares", 12);
     if (_t.hwmon)
     {
@@ -129,7 +196,7 @@ std::vector<std::string> statsTable(
             h << pad("Hot", 6);
         if (showMem)
             h << pad("Mem", 6);
-        h << pad("Fan", 5) << pad("Power", 7) << pad("kh/W", 7);
+        h << pad("Fan", 5) << pad("Power", 7) << pad("kH/J", 7);
         if (showClocks)
             h << pad("Clocks", 12);
     }
@@ -142,7 +209,8 @@ std::vector<std::string> statsTable(
         const auto& m = _t.miners[i];
         std::string name = i < _gpus.size() ? _gpus[i].name : "";
         std::ostringstream l;
-        l << pad(m.prefix + std::to_string(i), 4, true) << pad(name.substr(0, 25), 26, true);
+        l << pad((m.prefix == "cp" ? "cpu" : "gpu") + std::to_string(i), 6, true)
+          << pad(name.substr(0, 25), 26, true);
         if (m.paused)
         {
             std::string reason = i < _gpus.size() ? _gpus[i].pauseReason : "";
@@ -176,7 +244,7 @@ std::vector<std::string> statsTable(
     if (_t.miners.size() > 1)
     {
         std::ostringstream l;
-        l << EthWhiteBold << pad("Total", 30, true)
+        l << EthWhiteBold << pad("Total", 32, true)
           << pad(fixed(_t.farm.hashrate / sc.divisor), 10)
           << pad(fixed(_t.farm.hashrate60 / sc.divisor), 9)
           << pad(fixed(_t.farm.hashrate900 / sc.divisor), 9) << pad(shares(_t.farm.solutions), 12);
