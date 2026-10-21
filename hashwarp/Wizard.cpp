@@ -38,10 +38,10 @@ struct KnownPool
     bool tls;
 };
 const KnownPool c_knownPools[] = {
-    {"rplant.xyz, Europe, PPLNS 1%", "stratum-eu.rplant.xyz:17159", true},
-    {"rplant.xyz, North America, PPLNS 1%", "stratum-na.rplant.xyz:17159", true},
-    {"rplant.xyz, Asia, PPLNS 1%", "stratum-asia.rplant.xyz:17159", true},
-    {"rplant.xyz, Russia, PPLNS 1%", "stratum-ru.rplant.xyz:17159", true},
+    {"rplant.xyz, Europe, PROP 1%", "stratum-eu.rplant.xyz:17159", true},
+    {"rplant.xyz, North America, PROP 1%", "stratum-na.rplant.xyz:17159", true},
+    {"rplant.xyz, Asia, PROP 1%", "stratum-asia.rplant.xyz:17159", true},
+    {"rplant.xyz, Russia, PROP 1%", "stratum-ru.rplant.xyz:17159", true},
     {"coolpool.top, PPLNS 1%", "prlx.coolpool.top:3003", false},
     {"coolpool.top, SOLO 1.5%", "prlx.coolpool.top:3002", false},
     {"cedric-crispin.com, Thailand, PPLNS 0.1%", "parallax.cedric-crispin.com:4554", false},

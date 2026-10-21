@@ -83,7 +83,7 @@ TEST_F(WizardTest, majority_pool_listed_last)
     EXPECT_FALSE(runWizard(path, in, out, &shares));
     EXPECT_NE(out.str().find("1) coolpool.top, PPLNS 1% · 14% of the blocks"), std::string::npos)
         << out.str();
-    EXPECT_NE(out.str().find("rplant.xyz, Russia, PPLNS 1% · 86% of the blocks, majority"),
+    EXPECT_NE(out.str().find("rplant.xyz, Russia, PROP 1% · 86% of the blocks, majority"),
         std::string::npos);
     EXPECT_NE(out.str().find("please choose another one"), std::string::npos);
     EXPECT_EQ(load().pools[0], "prlx.coolpool.top:3003");
